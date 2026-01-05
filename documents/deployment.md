@@ -511,6 +511,10 @@ spec:
 ### Deploy to Kubernetes
 
 ```bash
+# Save the above manifests to k8s/ directory, then apply
+mkdir -p k8s
+# (Save manifests to k8s/deployment.yaml)
+
 # Apply manifests
 kubectl apply -f k8s/
 

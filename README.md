@@ -354,7 +354,7 @@ Authorization: Bearer {your-api-key}
 |-------|------|---------|-------------|
 | **`html`** | string | *required* | Raw HTML content to render |
 | `options.png` | boolean | `false` | If `true`, output PNG; otherwise PDF |
-| `options.format` | string | `"A4"` | Paper size: `A4`, `A5`, `Letter`, `Legal` |
+| `options.format` | string | `"A4"` | Paper size: `A4`, `A5`, `LETTER`, `LEGAL` (case-insensitive) |
 | `options.orientation` | string | `"portrait"` | Page orientation: `portrait` or `landscape` |
 | `options.margin` | string | `"10mm"` | Page margins (e.g., `"10mm"`, `"1cm"`, `"0.5in"`) |
 | `options.single` | boolean | `false` | Force content to fit on single page (shrink-to-fit) |
@@ -615,7 +615,7 @@ ViewSarn includes pre-installed fonts optimized for Thai and English content:
 </style>
 ```
 
-For more details, see [FONTS.md](FONTS.md).
+For more details, see [FONTS.md](./FONTS.md).
 
 ---
 
