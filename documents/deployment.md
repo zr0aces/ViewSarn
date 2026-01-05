@@ -63,6 +63,83 @@ curl http://localhost:3000/health
 
 ---
 
+## Pre-built Docker Images
+
+ViewSarn provides automated Docker image builds through GitHub Actions. Every time a release or version tag is created, a new Docker image is automatically built and published to GitHub Container Registry (GHCR).
+
+### Using Pre-built Images
+
+**Pull the latest image:**
+```bash
+docker pull ghcr.io/zr0aces/viewsarn:latest
+```
+
+**Pull a specific version:**
+```bash
+docker pull ghcr.io/zr0aces/viewsarn:1.0.0
+```
+
+**Run with docker:**
+```bash
+# Create API keys file first
+cat > apikeys.txt << EOF
+your-secret-key
+EOF
+
+docker run -d \
+  -p 3000:3000 \
+  -v $(pwd)/output:/output \
+  -v $(pwd)/apikeys.txt:/app/apikeys.txt:ro \
+  -e API_KEYS_FILE=/app/apikeys.txt \
+  --shm-size=1gb \
+  ghcr.io/zr0aces/viewsarn:latest
+```
+
+**Use in docker-compose.yml:**
+```yaml
+version: "3.8"
+services:
+  viewsarn:
+    image: ghcr.io/zr0aces/viewsarn:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - OUTPUT_DIR=/output
+      - API_KEYS_FILE=/app/apikeys.txt
+    volumes:
+      - ./output:/output
+      - ./apikeys.txt:/app/apikeys.txt:ro
+    shm_size: "1gb"
+    restart: unless-stopped
+```
+
+### Available Tags
+
+The following tags are automatically generated:
+- `latest` - Most recent release
+- `1.0.0` - Specific version (semantic versioning)
+- `1.0` - Major.minor version
+- `1` - Major version only
+
+### Automated Build Process
+
+The Docker images are built automatically via GitHub Actions when:
+- A new release is published on GitHub
+- A new tag matching `v*` pattern is pushed (e.g., `v1.0.0`)
+
+The workflow:
+1. Checks out the repository code
+2. Sets up Docker Buildx for efficient builds
+3. Logs in to GitHub Container Registry
+4. Extracts metadata for proper tagging
+5. Builds the Docker image using the Dockerfile
+6. Pushes to `ghcr.io/zr0aces/viewsarn` with appropriate tags
+
+For more details, see `.github/workflows/docker-publish.yml` in the repository.
+
+---
+
 ## Production Deployment
 
 ### Single Server with Docker Compose
