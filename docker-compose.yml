@@ -1,0 +1,21 @@
+services:
+
+viewsarn:
+    container_name: viewsarn
+    image: my-playwright-batch:latest
+    build:
+      dockerfile: Dockerfile
+    shm_size: '1gb'
+    # Not exposed to host for security reasons
+    #ports:
+    #  - "3000:3000"
+    volumes:
+      - ./uploads:/output
+      - ./apikeys.txt:/app/apikeys.txt:ro
+    environment:
+      - OUTPUT_DIR=/output
+      - API_KEYS_FILE=/app/apikeys.txt
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX=120
+      - TZ=Asia/Bangkok
+    restart: "no"
