@@ -314,23 +314,11 @@ Retry-After: 15
 
 ---
 
-## 📡 API Documentation
+## 📡 API: POST /convert
 
-### POST /convert
+Converts HTML into PDF or PNG.
 
-Converts HTML content into PDF or PNG format.
-
-#### Endpoint
-
-```
-POST /convert
-Content-Type: application/json
-Authorization: Bearer {your-api-key}
-```
-
-#### Request Body
-
-```json
+Request (JSON)
 {
   "html": "<html><body><h1>Hello</h1></body></html>",
   "options": {
@@ -346,143 +334,103 @@ Authorization: Bearer {your-api-key}
   "save": false,
   "outPath": "reports/file.pdf"
 }
-```
 
-#### Request Parameters
+Main Fields
+Field Type Description
+html string Required. Raw HTML string
+options.png bool If true → PNG, else PDF
+options.format A4/A5/Letter/Legal Paper size
+options.orientation portrait/landscape PDF orientation
+options.margin string “10mm”, “1cm”, etc
+options.single bool Force single page (shrink-to-fit)
+options.scale number Manual scale override (0.1–2)
+options.dpi number PNG DPI (affects resolution)
+save bool Save to server’s /output folder
+outPath string Where to save inside /output
+📤 Output Modes
+A) Direct file download
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| **`html`** | string | *required* | Raw HTML content to render |
-| `options.png` | boolean | `false` | If `true`, output PNG; otherwise PDF |
-| `options.format` | string | `"A4"` | Paper size: `A4`, `A5`, `Letter`, `Legal` |
-| `options.orientation` | string | `"portrait"` | Page orientation: `portrait` or `landscape` |
-| `options.margin` | string | `"10mm"` | Page margins (e.g., `"10mm"`, `"1cm"`, `"0.5in"`) |
-| `options.single` | boolean | `false` | Force content to fit on single page (shrink-to-fit) |
-| `options.scale` | number\|null | `null` | Manual scale override (0.1 to 2.0) |
-| `options.dpi` | number | `96` | PNG resolution (DPI) - only affects PNG output |
-| `options.filename` | string\|null | `null` | Suggested filename for download/save |
-| `save` | boolean | `false` | If `true`, save to server's `/output` folder; otherwise stream to client |
-| `outPath` | string\|null | `null` | Relative path within `/output` folder (when `save=true`) |
+If save=false (default):
 
-#### Response Modes
+Response is application/pdf or image/png
 
-**Mode A: Direct Download (default)**
+Browser downloads the generated file
 
-When `save=false` (default), the file is streamed directly to the client:
+B) Save to server
 
-- **Content-Type**: `application/pdf` or `image/png`
-- **Body**: Binary PDF or PNG data
+If save=true, response is JSON:
 
-**Mode B: Save to Server**
-
-When `save=true`, the file is saved to the server's `/output` directory:
-
-```json
 {
   "path": "/output/reports/invoice-2025.pdf",
   "filename": "invoice-2025.pdf",
   "size": 34555,
   "scale": 1.00,
-  "contentSize": { "width": 794, "height": 1123 },
-  "paper": "A4",
-  "orientation": "portrait"
+  "contentSize": { ... }
 }
-```
 
-#### Error Responses
+Your host will have the file at:
 
-| Status Code | Description | Response Body |
-|-------------|-------------|---------------|
-| 400 | Bad Request | `{"error": "Missing \"html\" (string)"}` |
-| 401 | Unauthorized | `{"error": "Unauthorized"}` |
-| 429 | Too Many Requests | `{"error": "Rate limit exceeded", "retry_after_seconds": 15}` |
-| 500 | Internal Server Error | `{"error": "Page crashed!"}` |
+./output/reports/invoice-2025.pdf
 
-### GET /health
+📘 Example Use Cases
 
-Health check endpoint for monitoring.
-
-#### Response
-
-```json
-{
-  "ok": true,
-  "pid": 24,
-  "apiAuthFileInUse": true,
-  "rate_limit_window_ms": 60000,
-  "rate_limit_max": 120
-}
-```
-
----
-
-## 📘 Usage Examples
-
-### 1. Simple PDF Generation
-
-```bash
-curl -X POST http://localhost:3000/convert \
+1) Simple PDF generation
+curl -X POST <http://localhost:3000/convert> \
   -H "Authorization: Bearer key-abc123" \
   -H "Content-Type: application/json" \
   -d '{
-    "html": "<h1>Hello PDF</h1>",
-    "options": {"format": "A4"}
-  }' \
+        "html":"<h1>Hello PDF</h1>",
+        "options":{"format":"A4"}
+      }' \
   --output hello.pdf
-```
 
-### 2. Generate PNG with High DPI
-
-```bash
-curl -X POST http://localhost:3000/convert \
+2) Generate PNG with DPI + single page
+curl -X POST <http://localhost:3000/convert> \
   -H "x-api-key: key-admin" \
   -H "Content-Type: application/json" \
   -d '{
-    "html": "<h1>Chart</h1>",
-    "options": {"png": true, "dpi": 150, "single": true}
-  }' \
+        "html":"<h1>Chart</h1>",
+        "options":{"png":true, "dpi":150, "single":true}
+      }' \
   --output chart.png
-```
 
-### 3. Save PDF to Server
-
-```bash
-curl -X POST http://localhost:3000/convert \
+3) Save PDF into server folder structure
+curl -X POST <http://localhost:3000/convert> \
   -H "Authorization: Bearer key-admin" \
   -H "Content-Type: application/json" \
   -d '{
-    "html": "<h1>Invoice 2025</h1>",
-    "save": true,
-    "outPath": "invoices/2025/invoice-001.pdf",
-    "options": {"format": "A5", "orientation": "landscape"}
-  }'
-```
+        "html":"<h1>Invoice 2025</h1>",
+        "save":true,
+        "outPath":"invoices/2025/invoice-001.pdf",
+        "options":{"format":"A5","orientation":"landscape"}
+      }'
 
-### 4. Thai Text Rendering
+Output:
 
-```bash
-curl -X POST http://localhost:3000/convert \
+{
+  "path": "/output/invoices/2025/invoice-001.pdf",
+  "filename": "invoice-001.pdf",
+  "size": 14002
+}
+
+1) Thai text rendering (Sarabun font)
+curl -X POST <http://localhost:3000/convert> \
   -H "Authorization: Bearer key-abc123" \
   -H "Content-Type: application/json" \
   -d '{
-    "html": "<p style=\"font-family:Sarabun;font-size:20px;\">ทดสอบ ภาษาไทย</p>"
-  }' \
+        "html":"<p style=\"font-family:Sarabun;font-size:20px;\">ทดสอบ ภาษาไทย</p>"
+      }' \
   --output thai.pdf
-```
 
-### 5. Using the CLI Helper Script
+Thanks to fonts installed in the Dockerfile:
 
-```bash
-./convert-cli.sh \
-  --file example.html \
-  --api-key key-abc123 \
-  --format A4 \
-  --output result.pdf
-```
+TH Sarabun New
 
----
+Noto Sans (fallback)
 
-## 💻 Client Code Examples
+Noto Sans Thai (from repo)
+
+💻 Client Code Examples
 
 ### Node.js (using fetch)
 
@@ -494,7 +442,7 @@ async function generatePdf() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer key-abc123'
+      'Authorization': 'Bearer key-abc123' // if auth enabled
     },
     body: JSON.stringify({
       html: '<h1>Hello World</h1><p>This is a PDF.</p>',
@@ -505,9 +453,7 @@ async function generatePdf() {
     })
   });
 
-  if (!response.ok) {
-    throw new Error(`Error: ${response.statusText}`);
-  }
+  if (!response.ok) throw new Error(`Error: ${response.statusText}`);
 
   const buffer = await response.arrayBuffer();
   fs.writeFileSync('output.pdf', Buffer.from(buffer));
@@ -525,7 +471,7 @@ import requests
 url = "http://localhost:3000/convert"
 headers = {
     "Content-Type": "application/json",
-    "Authorization": "Bearer key-abc123"
+    "Authorization": "Bearer key-abc123" # if auth enabled
 }
 payload = {
     "html": "<h1>Hello World</h1><p>This is a PDF.</p>",
@@ -545,235 +491,60 @@ else:
     print(f"Error: {response.status_code} - {response.text}")
 ```
 
-### PHP (using cURL)
-
-```php
-<?php
-$url = 'http://localhost:3000/convert';
-$data = [
-    'html' => '<h1>Hello World</h1><p>This is a PDF.</p>',
-    'options' => [
-        'format' => 'A4',
-        'margin' => '20mm'
-    ]
-];
-
-$ch = curl_init($url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/json',
-    'Authorization: Bearer key-abc123'
-]);
-
-$result = curl_exec($ch);
-$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
-
-if ($httpCode === 200) {
-    file_put_contents('output.pdf', $result);
-    echo "PDF saved to output.pdf\n";
-} else {
-    echo "Error: $httpCode\n";
-}
-?>
-```
-
----
-
-## 🎨 Font Support
-
-ViewSarn includes pre-installed fonts optimized for Thai and English content:
-
-### Installed Fonts
-
-- **Sarabun** - Thai font from Google Fonts (Regular, Bold, Italic, BoldItalic)
-- **Google Sans** - Modern sans-serif for English content
-- **Noto Sans Thai** - Fallback for Thai characters
-
-### Using Fonts in HTML
-
-```html
-<style>
-  /* For Thai-English mixed content */
-  body {
-    font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
-    font-size: 16px;
-  }
-  
-  /* For English headings */
-  h1, h2, h3 {
-    font-family: 'Google Sans', 'Inter', sans-serif;
-    font-weight: 600;
-  }
-  
-  /* For Thai text */
-  .thai-text {
-    font-family: 'Sarabun', 'Noto Sans Thai', sans-serif;
-  }
-</style>
-```
-
-For more details, see [FONTS.md](FONTS.md).
-
----
-
-## 🚀 Deployment
-
-### Production Best Practices
-
-1. **Always Enable Authentication**
-   - Use `API_KEYS_FILE` with strong, unique keys
-   - Rotate keys periodically
-   - Never commit keys to version control
-
-2. **Configure Rate Limiting**
-   - Adjust `RATE_LIMIT_MAX` based on your workload
-   - Consider per-user limits for multi-tenant scenarios
-
-3. **Use a Reverse Proxy**
-   - Place Nginx or Traefik in front for:
-     - SSL/TLS termination
-     - Request size limits
-     - Additional rate limiting
-     - Load balancing
-
-4. **Resource Limits**
-   - Set `shm_size: "1gb"` or higher for large documents
-   - Monitor memory usage with `NODE_OPTIONS=--max-old-space-size=2048`
-
-5. **High Availability**
-   - Run multiple replicas behind a load balancer
-   - Use shared storage for `/output` directory (NFS, S3, etc.)
-   - Consider Redis-backed rate limiting for distributed deployments
-
-### Example Production docker-compose.yml
-
-```yaml
+🛠 Docker Compose Example
 version: "3.8"
 services:
-  viewsarn:
+  render:
     build: .
-    image: viewsarn:latest
-    deploy:
-      replicas: 3
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1'
+    image: my-playwright-render:latest
     ports:
       - "3000:3000"
     environment:
-      - PORT=3000
       - OUTPUT_DIR=/output
       - API_KEYS_FILE=/app/apikeys.txt
-      - RATE_LIMIT_MAX=200
+      - RATE_LIMIT_MAX=120
       - RATE_LIMIT_WINDOW_MS=60000
-      - LOG_LEVEL=info
-      - NODE_ENV=production
     volumes:
-      - shared-output:/output
+      - ./output:/output
       - ./apikeys.txt:/app/apikeys.txt:ro
-    shm_size: "2gb"
-    restart: always
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    shm_size: "1gb"
+    restart: no
 
-volumes:
-  shared-output:
-    driver: local
-```
+📦 Deployment Tips
+For Production:
 
-### Monitoring and Logging
+Always set API_KEYS_FILE or API_KEY
 
-- **Health Checks**: Use `/health` endpoint for uptime monitoring
-- **Logs**: Structured JSON logs via Pino (can be sent to log aggregators)
-- **Metrics**: Monitor:
-  - Request rate and response times
-  - Memory usage (Chromium can be memory-intensive)
-  - Rate limit hits
-  - Error rates
+Increase RATE_LIMIT_MAX for intensive workloads
 
----
+Use Nginx or Traefik in front for:
 
-## 🧪 Testing
+SSL/TLS termination
 
-### Run Test Script
+Request size limit
 
-```bash
-node test-convert.js
-```
+Extra rate limiting / caching
 
-### Using the CLI Tool
+For High Throughput:
 
-```bash
-# Test PDF generation
-./convert-cli.sh --file example.html --api-key test-key --output test.pdf
+Run multiple replicas behind a proxy
 
-# Test PNG generation
-./convert-cli.sh --file example.html --api-key test-key --png --dpi 150 --output test.png
+Set NODE_OPTIONS=--max-old-space-size=1024 if large PDFs
 
-# Test with stdin
-echo "<h1>Test</h1>" | ./convert-cli.sh --file - --api-key test-key --output stdin-test.pdf
-```
+Consider redis-backed shared rate limiter (I can add this)
 
-### Health Check
+🧪 Debug / Health
 
-```bash
-curl http://localhost:3000/health
-```
+Health check endpoint:
 
----
+GET /health
 
-## 📖 Additional Documentation
+Example output:
 
-For more detailed information, see the `/documents` folder:
-
-- **[Architecture Overview](documents/architecture.md)** - System design and architecture
-- **[API Documentation](documents/api_docs.md)** - Complete API reference
-- **[Deployment Guide](documents/deployment.md)** - Production deployment instructions
-- **[Development Guide](documents/development.md)** - Local development setup
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🆘 Support
-
-If you encounter issues or have questions:
-
-1. Check the [documentation](documents/)
-2. Review existing [GitHub Issues](https://github.com/zr0aces/ViewSarn/issues)
-3. Open a new issue with detailed information
-
----
-
-## 🙏 Acknowledgments
-
-- **Playwright** - For the excellent browser automation framework
-- **Google Fonts** - For Sarabun and other open-source fonts
-- **Noto Fonts** - For comprehensive Unicode support
-
----
-
-**Built with ❤️ for the developer community**
+{
+  "ok": true,
+  "pid": 24,
+  "apiAuthFileInUse": true,
+  "rate_limit_window_ms": 60000,
+  "rate_limit_max": 120
+}
