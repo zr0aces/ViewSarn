@@ -81,6 +81,64 @@ Before getting started, ensure you have the following installed:
 
 ### Option 1: Docker Deployment (Recommended)
 
+#### Using Pre-built Image from GitHub Container Registry
+
+**1. Create a docker-compose.yml file**
+```yaml
+version: "3.8"
+services:
+  viewsarn:
+    image: ghcr.io/zr0aces/viewsarn:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - OUTPUT_DIR=/output
+      - API_KEYS_FILE=/app/apikeys.txt
+      - RATE_LIMIT_MAX=120
+      - RATE_LIMIT_WINDOW_MS=60000
+      - LOG_LEVEL=info
+    volumes:
+      - ./output:/output
+      - ./apikeys.txt:/app/apikeys.txt:ro
+    shm_size: "1gb"
+    restart: unless-stopped
+```
+
+**2. Create output directory and API keys file**
+```bash
+mkdir -p output
+cat > apikeys.txt << EOF
+# Add your API keys (one per line)
+key-abc123
+key-admin
+key-mobile-app
+EOF
+```
+
+**3. Start the service**
+```bash
+docker compose up -d
+```
+
+**4. Verify the service is running**
+```bash
+curl http://localhost:3000/health
+```
+
+Expected response:
+```json
+{
+  "ok": true,
+  "pid": 24,
+  "apiAuthFileInUse": true,
+  "rate_limit_window_ms": 60000,
+  "rate_limit_max": 120
+}
+```
+
+#### Building from Source
+
 **1. Clone the repository**
 ```bash
 git clone https://github.com/zr0aces/ViewSarn.git
