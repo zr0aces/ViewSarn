@@ -1,0 +1,62 @@
+version: "3.8"
+
+services:
+  viewsarn:
+    build: .
+    image: viewsarn:latest
+    container_name: viewsarn
+    ports:
+      - "3000:3000"
+    environment:
+      # Server Configuration
+      - PORT=3000
+      - OUTPUT_DIR=/output
+      - LOG_LEVEL=info
+      
+      # Authentication (choose one method)
+      # Method 1: Multiple API keys via file (recommended)
+      - API_KEYS_FILE=/app/apikeys.txt
+      # Method 2: Single API key (uncomment to use)
+      # - API_KEY=your-secret-key-here
+      
+      # API Keys Auto-reload Interval (milliseconds)
+      - API_KEYS_RELOAD_MS=30000
+      
+      # Rate Limiting
+      - RATE_LIMIT_MAX=120
+      - RATE_LIMIT_WINDOW_MS=60000
+      
+      # Node.js Configuration
+      - NODE_ENV=production
+    volumes:
+      # Mount output directory for saved files
+      - ./output:/output
+      
+      # Mount API keys file (read-only)
+      # Create apikeys.txt in project root before starting
+      - ./apikeys.txt:/app/apikeys.txt:ro
+    
+    # Shared memory size for Chromium browser
+    # Increase for large documents or high concurrency
+    shm_size: "1gb"
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits (optional but recommended for production)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
