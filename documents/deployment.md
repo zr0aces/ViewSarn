@@ -81,10 +81,16 @@ docker pull ghcr.io/zr0aces/viewsarn:1.0.0
 
 **Run with docker:**
 ```bash
+# Create API keys file first
+cat > apikeys.txt << EOF
+your-secret-key
+EOF
+
 docker run -d \
   -p 3000:3000 \
   -v $(pwd)/output:/output \
-  -e API_KEY=your-secret-key \
+  -v $(pwd)/apikeys.txt:/app/apikeys.txt:ro \
+  -e API_KEYS_FILE=/app/apikeys.txt \
   --shm-size=1gb \
   ghcr.io/zr0aces/viewsarn:latest
 ```
@@ -100,9 +106,10 @@ services:
     environment:
       - PORT=3000
       - OUTPUT_DIR=/output
-      - API_KEY=your-secret-key
+      - API_KEYS_FILE=/app/apikeys.txt
     volumes:
       - ./output:/output
+      - ./apikeys.txt:/app/apikeys.txt:ro
     shm_size: "1gb"
     restart: unless-stopped
 ```

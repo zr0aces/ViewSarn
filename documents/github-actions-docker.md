@@ -49,10 +49,16 @@ docker pull ghcr.io/zr0aces/viewsarn:1.0.0
 ### Run with Docker
 
 ```bash
+# Create API keys file first
+cat > apikeys.txt << EOF
+your-secret-key
+EOF
+
 docker run -d \
   -p 3000:3000 \
   -v $(pwd)/output:/output \
-  -e API_KEY=your-secret-key \
+  -v $(pwd)/apikeys.txt:/app/apikeys.txt:ro \
+  -e API_KEYS_FILE=/app/apikeys.txt \
   --shm-size=1gb \
   ghcr.io/zr0aces/viewsarn:latest
 ```
@@ -67,10 +73,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - API_KEY=your-secret-key
+      - API_KEYS_FILE=/app/apikeys.txt
       - OUTPUT_DIR=/output
     volumes:
       - ./output:/output
+      - ./apikeys.txt:/app/apikeys.txt:ro
     shm_size: "1gb"
 ```
 
@@ -131,7 +138,7 @@ By default, images published to GHCR inherit the repository's visibility:
 
 To change image visibility:
 
-1. Go to `https://github.com/orgs/zr0aces/packages`
+1. Go to the repository's Packages section on GitHub
 2. Find the `viewsarn` package
 3. Click "Package settings"
 4. Change visibility as needed
