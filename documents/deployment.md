@@ -136,7 +136,13 @@ The workflow:
 5. Builds the Docker image using the Dockerfile
 6. Pushes to `ghcr.io/zr0aces/viewsarn` with appropriate tags
 
-For more details, see `.github/workflows/docker-publish.yml` in the repository.
+For more details, see the GitHub Actions workflow file in `.github/workflows/docker-publish.yml`.
+
+### Release Workflow
+To publish a new official image:
+1. **Create a Tag**: `git tag v1.x.x` and `git push origin v1.x.x`.
+2. **GitHub Release**: Use the UI or `gh release create v1.x.x`.
+3. **Automatic Build**: The workflow will trigger, build, and push to GHCR.
 
 ---
 

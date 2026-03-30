@@ -1,8 +1,8 @@
-# ViewSarn Architecture
+# 🏗️ ViewSarn Architecture
 
 ## System Overview
 
-ViewSarn is a **monolithic containerized application** that provides HTML-to-PDF/PNG conversion as a service. The architecture is designed for simplicity, reliability, and ease of deployment.
+ViewSarn is a **high-performance, containerized microservice** designed for high-fidelity HTML-to-PDF/PNG conversion. It leverages Playwright's Chromium engine to provide pixel-perfect rendering with full support for complex layouts, custom fonts, and modern web standards.
 
 ---
 
@@ -316,8 +316,11 @@ spec:
 1. System dependencies (Chromium dependencies)
 2. Font installation (Sarabun, Google Sans, Noto)
 3. Node.js dependencies
-4. Playwright browser installation
-5. Application code
+### Automated Release & CI/CD
+ViewSarn utilizes GitHub Actions for continuous integration and automated delivery:
+- **Trigger**: New release or `v*` tag push.
+- **Artifact**: Multi-tagged Docker image pushed to GitHub Container Registry (GHCR).
+- **Security**: Built using official images with security-hardened configurations.
 
 **Optimization:**
 - Multi-stage builds not used (single-stage for simplicity)

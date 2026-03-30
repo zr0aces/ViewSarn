@@ -1,18 +1,18 @@
-# ViewSarn Development Guide
+# 🛠️ ViewSarn Development Guide
 
-This guide helps developers set up a local development environment, understand the codebase, and contribute to ViewSarn.
+This guide provides everything you need to set up a professional local development environment, understand the internal architecture, and contribute to the ViewSarn ecosystem.
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 
 1. [Local Development Setup](#local-development-setup)
 2. [Project Structure](#project-structure)
 3. [Development Workflow](#development-workflow)
-4. [Testing](#testing)
-5. [Code Style and Conventions](#code-style-and-conventions)
-6. [Debugging](#debugging)
-7. [Contributing](#contributing)
+4. [Testing & QA](#testing-and-qa)
+5. [Code Style & Conventions](#code-style-and-conventions)
+6. [Debugging Excellence](#debugging)
+7. [Contribution Guidelines](#contributing)
 
 ---
 
@@ -135,11 +135,12 @@ ViewSarn/
 │   ├── Sarabun/
 │   ├── Google_Sans/
 │   └── Noto_Sans_Thai/
-├── documents/             # Technical documentation
-│   ├── architecture.md
-│   ├── api_docs.md
-│   ├── deployment.md
-│   └── development.md
+├── documents/             # Comprehensive technical documentation
+│   ├── architecture.md    # System design & data flow
+│   ├── api_docs.md        # API reference & client examples
+│   ├── deployment.md      # Production & CI/CD strategies
+│   ├── development.md     # This guide
+│   └── fonts.md           # Typography & Thai language support
 ├── Dockerfile             # Production Docker image
 ├── docker-compose.yml     # Docker Compose configuration
 ├── package.json           # Node.js dependencies

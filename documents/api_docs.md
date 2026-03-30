@@ -1,8 +1,16 @@
-# ViewSarn API Documentation
+# 🚀 ViewSarn API Documentation
 
-Complete API reference for the ViewSarn HTML-to-PDF/PNG conversion service.
+Complete API reference for the ViewSarn HTML-to-PDF/PNG high-fidelity conversion service.
 
 ---
+
+## 🔥 Features at a Glance
+
+- **Multi-Format**: Robust support for high-quality PDF and high-DPI PNG.
+- **Smart Scaling**: Automatic scale-to-fit plus manual overrides.
+- **Modern Standards**: Chromium-based rendering for CSS3, Flexbox, and Grid.
+- **Production Secure**: Dual-mode API key authentication and rate limiting.
+- **Thai-Ready**: Specialized fonts for perfect Thai and English mixed content.
 
 ## Base URL
 
