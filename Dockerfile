@@ -1,5 +1,5 @@
 # 1. Use the "slim" variant (Bookworm is current stable Debian)
-ARG NODE_IMAGE=node:20-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim
 FROM ${NODE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive

@@ -20,7 +20,7 @@ This guide provides everything you need to set up a professional local developme
 
 ### Prerequisites
 
-- **Node.js**: 16.x or higher (20.x recommended)
+- **Node.js**: 24.x or higher
 - **npm**: 8.x or higher
 - **Git**: Latest version
 - **Docker** (optional): For containerized development

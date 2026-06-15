@@ -310,7 +310,7 @@ spec:
 
 ### Docker Image Structure
 
-**Base Image:** `node:20-bullseye`
+**Base Image:** `node:24-bookworm-slim`
 
 **Layers:**
 1. System dependencies (Chromium dependencies)
