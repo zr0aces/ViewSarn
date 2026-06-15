@@ -20,7 +20,7 @@ This guide provides everything you need to set up a professional local developme
 
 ### Prerequisites
 
-- **Node.js**: 16.x or higher (20.x recommended)
+- **Node.js**: 24.x or higher
 - **npm**: 8.x or higher
 - **Git**: Latest version
 - **Docker** (optional): For containerized development
@@ -438,64 +438,20 @@ node test-convert.js
 ./convert-cli.sh --file example.html --api-key dev-key-123 --save --outpath test/result.pdf
 ```
 
-### Automated Testing (Future)
+### Automated Testing
 
-ViewSarn doesn't currently have automated tests. To add them:
+ViewSarn includes lightweight automated coverage using Node.js's built-in test runner.
 
-**1. Install testing framework:**
-```bash
-npm install --save-dev jest supertest
-```
-
-**2. Create `tests/` directory:**
-```bash
-mkdir tests
-```
-
-**3. Write tests:**
-
-```javascript
-// tests/api.test.js
-const request = require('supertest');
-const app = require('../server');  // Export app from server.js
-
-describe('API Tests', () => {
-    test('GET /health returns 200', async () => {
-        const res = await request(app).get('/health');
-        expect(res.statusCode).toBe(200);
-        expect(res.body.ok).toBe(true);
-    });
-
-    test('POST /convert without auth returns 401', async () => {
-        const res = await request(app)
-            .post('/convert')
-            .send({ html: '<h1>Test</h1>' });
-        expect(res.statusCode).toBe(401);
-    });
-
-    test('POST /convert with valid HTML returns PDF', async () => {
-        const res = await request(app)
-            .post('/convert')
-            .set('Authorization', 'Bearer dev-key-123')
-            .send({ html: '<h1>Test</h1>' });
-        expect(res.statusCode).toBe(200);
-        expect(res.headers['content-type']).toBe('application/pdf');
-    });
-});
-```
-
-**4. Add to package.json:**
-```json
-"scripts": {
-    "start": "node server.js",
-    "test": "jest"
-}
-```
-
-**5. Run tests:**
+**Run the test suite:**
 ```bash
 npm test
 ```
+
+Current automated coverage focuses on:
+
+- API key validation behavior
+- Rate limiting behavior
+- Fast feedback without requiring a browser launch
 
 ---
 

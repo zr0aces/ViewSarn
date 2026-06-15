@@ -63,7 +63,7 @@ ViewSarn’s documentation is organized into specialized guides for different ro
 
 ## 🛠️ Core Tech Stack
 
-- **Runtime**: Node.js 20+
+- **Runtime**: Node.js 24+
 - **Framework**: Express.js
 - **Rendering**: Playwright (Chromium)
 - **Logging**: Pino (Structured JSON)
