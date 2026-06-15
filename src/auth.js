@@ -35,7 +35,8 @@ async function loadApiKeysFromFile() {
 // Initial load
 loadApiKeysFromFile();
 // Periodic reload
-setInterval(loadApiKeysFromFile, API_KEYS_RELOAD_MS);
+const apiKeyReloadTimer = setInterval(loadApiKeysFromFile, API_KEYS_RELOAD_MS);
+apiKeyReloadTimer.unref?.();
 
 function validateAuth(req) {
     const authHeader = req.get('authorization');

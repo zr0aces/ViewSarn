@@ -6,7 +6,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "body-parser": "^2.2.2",
