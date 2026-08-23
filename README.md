@@ -2,7 +2,7 @@
 
 **The Elite HTML-to-PDF/PNG Conversion Engine**
 
-**Version:** `2026.8.1` (CalVer)
+**Version:** `2026.8.2` (CalVer)
 
 ViewSarn is a high-performance, production-ready microservice that transforms raw HTML into high-fidelity PDF documents or crisp PNG images. Built on Playwright's Chromium engine, it ensures pixel-perfect rendering with specialized support for complex Thai typography, CSS3, and modern web layouts.
 

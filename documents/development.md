@@ -13,8 +13,8 @@ This guide provides everything you need to set up a professional local developme
 5. [Code Style & Conventions](#code-style-and-conventions)
 6. [Debugging Excellence](#debugging)
 7. [Contribution Guidelines](#contributing)
-
----
+8. [Versioning & Release](#versioning-and-release)
+9. [Development Tools](#development-tools)
 
 ## Local Development Setup
 
@@ -635,6 +635,47 @@ when apikeys.txt is missing.
 2. Tests must pass (if implemented)
 3. Documentation must be updated
 4. Code must follow style guidelines
+
+---
+
+## Versioning and Release
+
+ViewSarn follows **Calendar Versioning (CalVer)** in the format `YYYY.M.MINOR`:
+- `YYYY`: 4-digit calendar year (e.g. `2026`).
+- `M`: Calendar month without leading zero (e.g. `8` for August, `12` for December).
+- `MINOR`: Incremental release counter within the month, starting at `1` and resetting to `1` when a new month begins.
+
+### Single Source of Truth
+The `VERSION` file at the repository root contains the active version string. All other components (e.g., `package.json`, `README.md`, `documents/deployment.md`) are derived and synchronized from this file.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run release` | Automatically calculates next CalVer based on system date and syncs all files |
+| `npm run release -- --version 2026.8.5` | Manually overrides the release version |
+| `npm run version:sync` | Propagates `VERSION` to all target files |
+| `npm run version:check` | Verifies all target files match `VERSION` (used as a CI gate) |
+
+### Release Steps
+
+1. Run the release bump script:
+   ```bash
+   npm run release
+   ```
+2. Review the modified files and run test suite:
+   ```bash
+   npm test
+   npm run version:check
+   ```
+3. Commit and tag:
+   ```bash
+   git add VERSION package.json README.md documents/deployment.md
+   git commit -m "chore: release vYYYY.M.MINOR"
+   git tag -a "vYYYY.M.MINOR" -m "Release vYYYY.M.MINOR"
+   git push origin main --tags
+   ```
+4. Pushing the `v*` tag triggers GitHub Actions to automatically build and push the multi-arch Docker image to GHCR.
 
 ---
 

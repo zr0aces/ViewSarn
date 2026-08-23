@@ -1,6 +1,6 @@
 {
   "name": "ViewSarn",
-  "version": "2026.8.1",
+  "version": "2026.8.2",
   "private": true,
   "description": "HTML to PDF/PNG conversion service built on Playwright Chromium, with Thai and English fonts.",
   "license": "MIT",
