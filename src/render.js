@@ -45,7 +45,10 @@ function httpError(status, message) {
     return Object.assign(new Error(message), { status });
 }
 
-function acquireSlot() {
+function acquireSlot(signal) {
+    if (signal && signal.aborted) {
+        return Promise.reject(httpError(499, 'Client closed the request'));
+    }
     if (active < RENDER_CONCURRENCY) {
         active += 1;
         return Promise.resolve();
@@ -55,12 +58,27 @@ function acquireSlot() {
     if (waiting.length >= RENDER_QUEUE_MAX) {
         return Promise.reject(httpError(503, 'Render queue is full, retry shortly'));
     }
-    return new Promise(resolve => waiting.push(resolve));
+    // A caller that has already hung up should not be rendered for: it burns a
+    // slot producing output nobody reads, and delays the callers behind it.
+    return new Promise((resolve, reject) => {
+        const entry = {};
+        const onAbort = () => {
+            const index = waiting.indexOf(entry);
+            if (index !== -1) waiting.splice(index, 1);
+            reject(httpError(499, 'Client closed the request'));
+        };
+        entry.resolve = () => {
+            if (signal) signal.removeEventListener('abort', onAbort);
+            resolve();
+        };
+        waiting.push(entry);
+        if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    });
 }
 
 function releaseSlot() {
     const next = waiting.shift();
-    if (next) next();
+    if (next) next.resolve();
     else active -= 1;
 }
 
@@ -77,9 +95,9 @@ function clamp(s) {
     return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 }
 
-async function renderHtmlToBuffer(html, opts) {
+async function renderHtmlToBuffer(html, opts, { signal } = {}) {
     const b = await initBrowser();
-    await acquireSlot();
+    await acquireSlot(signal);
 
     const isPng = !!opts.png;
     const dpi = opts.dpi && Number(opts.dpi) > 0 ? Number(opts.dpi) : 96;

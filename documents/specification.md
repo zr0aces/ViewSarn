@@ -38,7 +38,11 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-1.6** | Paper size comes from `format` (`A4`, `A5`, `LETTER`, `LEGAL`, case-insensitive). An unrecognised value falls back to A4 rather than erroring, and must not resolve to an inherited object property. |
 | ☑️ **R-1.7** | Margins accept `mm`, `cm`, and `in`. A bare number is read as mm. Other CSS units are not parsed. |
 | ☑️ **R-1.15** | Request bodies over `BODY_LIMIT` are rejected with `413` by the body parser, before the route runs. |
-| ⬜ **R-1.16** | Errors should carry a JSON `{ "error": ... }` body. **Not met for parser-level errors:** a `413` and a malformed-JSON `400` come from Express's default handler as HTML. Every error raised by the route itself is JSON. Closing this needs a JSON error handler mounted after the body parser. |
+| ✅ **R-1.16** | Every error carries a JSON `{ "error": ..., "request_id": ... }` body, including the `413` and malformed-JSON `400` raised by the body parser before any route runs. |
+| ✅ **R-1.17** | `options` is validated before rendering: `format`, `orientation`, `waitUntil`, `margin`, `dpi`, `scale`, and `filename` are rejected with `400` when malformed, rather than silently coerced. `filename` may not contain path separators. |
+| ☑️ **R-1.18** | Every request carries an `X-Request-Id` — the caller's if supplied, otherwise generated — echoed in the response header, included in the error body, and attached to that request's log lines. |
+| ☑️ **R-1.19** | A `500` body reports a generic message. Chromium and filesystem detail goes to the log under the request id, never to the caller. |
+| ☑️ **R-1.20** | A caller that disconnects while queued is dropped from the queue rather than rendered for, and no response is written to the closed socket. |
 
 ### Scaling
 
@@ -65,6 +69,8 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 |---|---|
 | ☑️ **R-2.1** | A key is accepted as `Authorization: Bearer <key>` or `X-API-Key: <key>`. (Tests cover the bearer form only.) |
 | ☑️ **R-2.2** | Key sources resolve in order: a non-empty `API_KEYS_FILE` wins over `API_KEY`. |
+| ✅ **R-2.7** | API keys are compared as fixed-length SHA-256 digests, never as raw strings — `===` on a secret leaks its prefix through response timing. |
+| ☑️ **R-2.8** | The keys file is loaded **synchronously** at startup. An async first load leaves a window where a configured keys file is not yet read, during which the service falls back to `API_KEY` or serves unauthenticated. |
 | ☑️ **R-2.3** | With **neither** configured, authentication is disabled and every request is served. The service must log a warning at startup saying so. This is a deliberate zero-config default, not a bug — see §6. |
 | ☑️ **R-2.4** | The keys file is re-read every `API_KEYS_RELOAD_MS` so keys can be added or revoked without a restart. |
 | ☑️ **R-2.5** | A **transient** read failure of the keys file (for example `EACCES`) must leave the previously loaded keys in force. Only the file's absence clears them. Failing to read must never silently drop the service into unauthenticated mode. |
@@ -99,6 +105,7 @@ The service runs one Chromium instance; every in-flight render holds a page, and
 | ☑️ **R-4.5** | Request bodies are capped at `BODY_LIMIT` (default 15mb). |
 | ☑️ **R-4.6** | Peak memory is therefore bounded by roughly (`RENDER_CONCURRENCY` × page) + (`RENDER_QUEUE_MAX` × `BODY_LIMIT`). Operators sizing a container need both numbers, not just the first. |
 | ☑️ **R-4.7** | `SIGTERM`/`SIGINT` stop accepting connections, close the browser, then exit. |
+| ☑️ **R-4.9** | A render abandoned at the deadline releases its slot before its context has finished closing, so the page cap may be exceeded by the abandoned render for that moment. The overshoot is bounded by the number of simultaneous timeouts and resolves on its own. |
 
 ---
 
@@ -119,6 +126,8 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 |---|---|
 | ☑️ **R-5.1** | `GET /health` returns `200` with `ok`, `pid`, `apiAuthFileInUse`, and the rate-limit configuration. It skips **authentication** — container healthchecks and load balancer probes cannot present a key. |
 | ☑️ **R-5.2** | `/health` is **not** exempt from rate limiting; it must not be pollable for free. |
+| ☑️ **R-5.7** | `/metrics` exposes Prometheus counters when `METRICS_ENABLED=true`, off by default. Like `/health` it skips authentication but stays rate limited. |
+| ☑️ **R-5.8** | CORS headers are sent only for origins listed in `CORS_ORIGINS`, which is empty by default — correct for a server-to-server service. A preflight from an unlisted origin is refused with `403`. |
 | ☑️ **R-5.3** | Logs go to stdout as one JSON object per line when `NODE_ENV=production`. Human-readable formatting is a development-only concern and must not cost anything in production. |
 | ☑️ **R-5.4** | `503` and `504` are load signals, logged at `warn`; only genuine faults log at `error`. |
 | ☑️ **R-5.5** | Configuration is environment variables only, read once at startup. A malformed or out-of-range value falls back to its default rather than crashing — except where zero is meaningful (R-3.4, and `PORT=0` for an ephemeral port). |
@@ -159,4 +168,10 @@ Requirements added or changed after the initial specification, with the reason. 
 | R-1.13, R-1.14 | Added | A fixed 100ms sleep was replaced by waiting on webfonts and a painted frame; the font wait then needed its own bound to satisfy R-4.3. |
 | R-5.3 | Added | `pino-pretty` was running in production, costing a worker thread and emitting non-parseable logs while the docs claimed JSON. |
 | R-4.8 | Added | The render deadline could fire while `newContext` was still in flight. The cleanup path saw no context to close, then the context arrived with nobody waiting for it — leaking a context and its pages for the life of the process, and quietly exceeding the concurrency cap since the slot had already been returned. |
+| R-1.16 | Met | Parser-level errors (`413`, malformed-JSON `400`) came back as HTML from Express's default handler while every other error was JSON, so clients had no single error shape to parse. |
+| R-1.17 | Added | Only `html` was validated. A typo in `format` silently fell back to A4 and returned a plausible-looking wrong-sized document. |
+| R-1.19 | Added | The `500` body echoed `err.message` verbatim, handing Chromium and filesystem internals to the caller. |
+| R-2.7 | Added | Keys were compared with `===` and set membership on raw strings, which is timing-variable. |
+| R-2.8 | Added | The first keys-file load was async, leaving a startup window where a configured keys file was not yet read — requests in that window fell back to `API_KEY` or were served unauthenticated. |
+| R-1.20, R-4.9 | Added | A disconnected caller still consumed a render slot; and an abandoned render briefly exceeds the page cap, which was true but undocumented. |
 | R-3.6 | Added | `trust proxy` was never set while the deployment guide recommends an nginx reverse proxy that forwards `X-Forwarded-For`. Every anonymous client therefore resolved to the proxy's IP and shared a single rate-limit bucket. |

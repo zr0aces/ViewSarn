@@ -184,9 +184,17 @@ Centralizes all configuration from environment variables.
 - `RENDER_QUEUE_MAX` - Max requests waiting for a render slot before `503` (default: `100`)
 - `RENDER_TIMEOUT_MS` - Per-render deadline before `504` (default: `60000`)
 - `BODY_LIMIT` - Max request body size (default: `15mb`). Multiplies with `RENDER_QUEUE_MAX` to bound backlog memory — see the sizing worksheet in `deployment.md`
+- `CORS_ORIGINS` - Comma-separated allowed origins, or `*`. Empty (default) sends no CORS headers
+- `METRICS_ENABLED` - Set to `true` to expose `GET /metrics` in Prometheus format (default: off)
 - `TRUST_PROXY` - Express `trust proxy` setting (default: `false`). Set to `true`, a hop count, or a trusted subnet list when running behind a reverse proxy — otherwise every unauthenticated client is rate limited as one
 - `LOG_LEVEL` - Pino log level
 - `IS_PRODUCTION` - Derived from `NODE_ENV`; selects raw JSON logging over `pino-pretty`
+
+#### `src/validate.js`
+Validates the `options` object before rendering — paper format, orientation, `waitUntil`, margin units, dpi and scale ranges, and a filename with no path separators. Returns an error string or `null`. Rejecting beats coercing: a typo in `format` used to fall back to A4 and return a plausible-looking wrong-sized document.
+
+#### `src/httpErrors.js`
+`bodyErrorHandler` — Express error middleware for the two failures the body parser raises before any route runs (oversized body, malformed JSON), so they answer with the service's JSON error shape rather than Express's default HTML page.
 
 #### `src/auth.js`
 Handles API key authentication with hot-reloading.

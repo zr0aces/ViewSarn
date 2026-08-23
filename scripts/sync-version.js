@@ -64,6 +64,7 @@ function buildTargets(version) {
           // The "latest" pull stays literally `latest`; sync used to rewrite it
           // while check never asserted it, so drift here went unnoticed.
           what: 'latest image tag',
+          anchor: /\*\*Pull the latest image:\*\*/,
           apply: (content) => content.replace(
             /(\*\*Pull the latest image:\*\*\s*```bash\s*docker pull ghcr\.io\/zr0aces\/viewsarn:)\S+/g,
             '$1latest'
@@ -71,6 +72,7 @@ function buildTargets(version) {
         },
         {
           what: 'pinned image tag',
+          anchor: /\*\*Pull a specific version:\*\*/,
           apply: (content) => content.replace(
             /(\*\*Pull a specific version:\*\*\s*```bash\s*docker pull ghcr\.io\/zr0aces\/viewsarn:)\S+/g,
             `$1${version}`
@@ -78,6 +80,7 @@ function buildTargets(version) {
         },
         {
           what: 'specific version tag',
+          anchor: /- `[^`]+` - Specific version \([^)]+\)/,
           apply: (content) => content.replace(
             /- `[^`]+` - Specific version \([^)]+\)/g,
             `- \`${version}\` - Specific version (CalVer YYYY.M.MINOR)`
@@ -85,6 +88,7 @@ function buildTargets(version) {
         },
         {
           what: 'year.month tag',
+          anchor: /- `[^`]+` - (?:Major\.minor version|Year\.month tag \(YYYY\.M\))/,
           apply: (content) => content.replace(
             /- `[^`]+` - (?:Major\.minor version|Year\.month tag \(YYYY\.M\))/g,
             `- \`${year}.${month}\` - Year.month tag (YYYY.M)`
@@ -92,6 +96,7 @@ function buildTargets(version) {
         },
         {
           what: 'year tag',
+          anchor: /- `[^`]+` - (?:Major version only|Year tag \(YYYY\))/,
           apply: (content) => content.replace(
             /- `[^`]+` - (?:Major version only|Year tag \(YYYY\))/g,
             `- \`${year}\` - Year tag (YYYY)`
@@ -99,6 +104,7 @@ function buildTargets(version) {
         },
         {
           what: 'git tag example',
+          anchor: /\(e\.g\., `v[^`]+`\)/,
           apply: (content) => content.replace(/\(e\.g\., `v[^`]+`\)/g, `(e.g., \`v${version}\`)`)
         }
       ]
@@ -109,12 +115,20 @@ function buildTargets(version) {
 function applyRules(target, content) {
   let out = content;
   const changed = [];
+  const missing = [];
   for (const rule of target.rules) {
+    // A rule whose anchor has been reworded matches nothing, so its replace is a
+    // silent no-op: the file then looks in sync while no longer carrying the
+    // version at all. Report the missing anchor rather than passing green.
+    if (rule.anchor && !rule.anchor.test(out)) {
+      missing.push(rule.what);
+      continue;
+    }
     const next = rule.apply(out);
     if (next !== out) changed.push(rule.what);
     out = next;
   }
-  return { content: out, changed };
+  return { content: out, changed, missing };
 }
 
 // write: false checks, true rewrites. Returns { version, results, hasDivergence }.
@@ -137,6 +151,16 @@ function run({ write }) {
     } catch (err) {
       results.push({ name: target.name, status: 'diverged', detail: `could not process: ${err.message}` });
       hasDivergence = true;
+      continue;
+    }
+
+    if (applied.missing.length > 0) {
+      hasDivergence = true;
+      results.push({
+        name: target.name,
+        status: 'anchor-missing',
+        detail: `cannot locate: ${applied.missing.join(', ')} — the surrounding text was reworded, so the version can no longer be placed`
+      });
       continue;
     }
 

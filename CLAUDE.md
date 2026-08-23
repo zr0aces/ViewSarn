@@ -44,7 +44,9 @@ The interesting logic is the scale computation in `renderHtmlToBuffer`: measure 
 
 `options.png`, `single`, `format` (A4/A5/LETTER/LEGAL), `orientation`, `margin`, `dpi`, `scale`, `filename` come from the request body; unknown formats silently fall back to A4.
 
-Error bodies are JSON except for the two the body parser raises before the route — `413` (over `BODY_LIMIT`) and a malformed-JSON `400` — which Express's default handler emits as HTML. `documents/specification.md` tracks that as R-1.16.
+Every error body is JSON with `error` and `request_id`, including the `413`/malformed-`400` the body parser raises before any route — an error handler mounted straight after `express.json()` converts those, since Express's default would answer with HTML. A `500` deliberately returns a generic message; the real error goes to the log under the request id. `options` is validated in `src/validate.js` before rendering rather than coerced, and `src/httpErrors.js` holds the body-parser error middleware. Both live in `src/` rather than `server.js` so they can be unit tested — `test/validate.test.js` covers them.
+
+A client disconnect is detected with an `AbortController` fired from `res.on('close')` guarded by `res.writableFinished`, **not** `req.signal`: in Express 5 that signal is already aborted when the handler runs, so using it rejects every render as a disconnect and the request hangs with no response.
 
 `body.save: true` writes to `OUTPUT_DIR` and returns JSON metadata instead of streaming the file. `body.outPath` is joined under `OUTPUT_DIR` after stripping leading `../` — keep that normalization if you touch the save path.
 

@@ -96,7 +96,16 @@ ViewSarn is a **high-performance, containerized microservice** designed for high
 
 **Endpoints:**
 - `POST /convert` - Convert HTML to PDF/PNG
-- `GET /health` - Health check
+- `GET /health` - Health check (no API key; still rate limited)
+- `GET /metrics` - Prometheus counters, only when `METRICS_ENABLED=true` (no API key; still rate limited)
+
+**Cross-cutting middleware**, in the order a request meets it:
+
+1. **Request id** — `X-Request-Id` from the caller or generated; echoed on the response, attached to that request's log lines, and returned in every error body
+2. **CORS** — mounted only when `CORS_ORIGINS` is non-empty; an unlisted origin's preflight gets `403`
+3. **Body parser** (`BODY_LIMIT`), followed by an error handler that converts the parser's `413`/`400` into the same JSON error shape every other response uses
+4. **Auth and rate limiting** — `/health` and `/metrics` skip auth only
+5. **Route** — `options` is validated (`src/validate.js`) before any browser work starts
 
 ### 2. Authentication Module
 

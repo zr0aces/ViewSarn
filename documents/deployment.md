@@ -799,6 +799,30 @@ deploy:
       cpus: '1.0'
 ```
 
+### 3c. Scraping Metrics
+
+Set `METRICS_ENABLED=true` to expose `GET /metrics` in Prometheus text format. It is off by default, and like `/health` it skips authentication but stays rate limited — so keep it off, or block the path at the proxy, on anything internet-facing.
+
+```yaml
+environment:
+  - METRICS_ENABLED=true
+```
+
+Counters are per process and reset on restart, so aggregate across replicas rather than reading one pod:
+
+| Metric | Type | Watch it for |
+|---|---|---|
+| `viewsarn_renders_total` | counter | Throughput |
+| `viewsarn_render_failures_total` | counter | `500`s — genuine faults |
+| `viewsarn_render_rejected_total` | counter | `503`s — the queue is full; raise capacity or shed earlier |
+| `viewsarn_render_timeouts_total` | counter | `504`s — renders hitting `RENDER_TIMEOUT_MS` |
+| `viewsarn_rate_limited_total` | counter | `429`s |
+| `viewsarn_unauthorized_total` | counter | `401`s — misconfigured clients, or probing |
+| `viewsarn_renders_active` | gauge | Slots in use; sustained at `RENDER_CONCURRENCY` means saturated |
+| `viewsarn_renders_queued` | gauge | Backlog depth; approaching `RENDER_QUEUE_MAX` precedes `503`s |
+
+`renders_queued` rising while `renders_active` sits at the cap is the signal to raise `RENDER_CONCURRENCY` (with memory to match) or add replicas.
+
 ### 4. Rate Limiting Best Practices
 
 ```javascript

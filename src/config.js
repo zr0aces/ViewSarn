@@ -42,6 +42,10 @@ module.exports = {
     // everyone. On without a trusted proxy in front is worse: clients then spoof
     // X-Forwarded-For and get a fresh bucket per request.
     TRUST_PROXY: parseTrustProxy(process.env.TRUST_PROXY),
+    // Comma-separated origins, or '*'. Empty (default) sends no CORS headers,
+    // which is correct for a server-to-server service.
+    CORS_ORIGINS: (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean),
+    METRICS_ENABLED: process.env.METRICS_ENABLED === 'true',
     LOG_LEVEL: process.env.LOG_LEVEL || 'info',
     IS_PRODUCTION: process.env.NODE_ENV === 'production',
 };

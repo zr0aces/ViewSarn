@@ -100,6 +100,20 @@ Retry-After: 15
 
 ---
 
+## Request tracing
+
+Every response carries `X-Request-Id`. Send your own to have it used, or let the service generate one:
+
+```http
+X-Request-Id: 0f3c1e6a-6d5b-4f1e-9a44-2c5b8f9a1d33
+```
+
+The same id appears in the service's log lines for that request and in the `request_id` field of any error body — quote it when reporting a failure, since `500` bodies deliberately carry no internal detail.
+
+## CORS
+
+No CORS headers are sent by default, which suits server-to-server use. Set `CORS_ORIGINS` to a comma-separated origin list (or `*`) to allow browser callers; a preflight from an unlisted origin is refused with `403`.
+
 ## Endpoints
 
 ### POST /convert
@@ -255,7 +269,14 @@ Common causes:
 
 Raised by the JSON body parser before the route runs, so the limit applies to the whole body, not just the `html` field. Default is 15mb; see the sizing worksheet in the deployment guide, since `RENDER_QUEUE_MAX` x `BODY_LIMIT` is the backlog memory bound.
 
-> **Note — parser errors are not JSON.** `413`, and a malformed JSON body (`400`), are produced by Express's default error handler and come back as an **HTML** page with `Content-Type: text/html`, not the `{"error": "..."}` shape every other error uses. Clients must not assume a JSON body on those two codes. Everything raised by the route itself — `400` for a missing `html`, `401`, `429`, `500`, `503`, `504` — is JSON.
+Every error response is JSON, including this one and a malformed JSON body, and every one carries `request_id`:
+
+```json
+{
+  "error": "Request body exceeds the 15mb limit",
+  "request_id": "0f3c1e6a-6d5b-4f1e-9a44-2c5b8f9a1d33"
+}
+```
 
 **503 Service Unavailable** - Render queue is full
 
