@@ -1,6 +1,6 @@
 {
   "name": "ViewSarn",
-  "version": "1.0.0",
+  "version": "2026.8.1",
   "private": true,
   "description": "HTML to PDF/PNG conversion service built on Playwright Chromium, with Thai and English fonts.",
   "license": "MIT",
@@ -11,7 +11,10 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js",
-    "test:watch": "node --test --watch test/*.test.js"
+    "test:watch": "node --test --watch test/*.test.js",
+    "release": "node scripts/release.mjs",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check"
   },
   "dependencies": {
     "express": "^5.2.1",

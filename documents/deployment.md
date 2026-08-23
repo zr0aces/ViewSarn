@@ -76,7 +76,7 @@ docker pull ghcr.io/zr0aces/viewsarn:latest
 
 **Pull a specific version:**
 ```bash
-docker pull ghcr.io/zr0aces/viewsarn:1.0.0
+docker pull ghcr.io/zr0aces/viewsarn:2026.8.1
 ```
 
 **Run with docker:**
@@ -118,15 +118,15 @@ services:
 
 The following tags are automatically generated:
 - `latest` - Most recent release
-- `1.0.0` - Specific version (semantic versioning)
-- `1.0` - Major.minor version
-- `1` - Major version only
+- `2026.8.1` - Specific version (CalVer YYYY.M.MINOR)
+- `2026.8` - Year.month tag (YYYY.M)
+- `2026` - Year tag (YYYY)
 
 ### Automated Build Process
 
 The Docker images are built automatically via GitHub Actions when:
 - A new release is published on GitHub
-- A new tag matching `v*` pattern is pushed (e.g., `v1.0.0`)
+- A new tag matching `v*` pattern is pushed (e.g., `v2026.8.1`)
 
 The workflow:
 1. Checks out the repository code

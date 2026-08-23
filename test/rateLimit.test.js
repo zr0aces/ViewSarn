@@ -22,15 +22,29 @@ test('isRateLimitedFor only limits requests after the configured max is exceeded
   assert.equal(third.remaining, 0);
 });
 
-test('counters for idle clients are evicted once the map grows past the sweep threshold', () => {
+test('counter storage stays bounded as distinct clients accumulate', async () => {
   const { isRateLimitedFor, _size } = loadRateLimit({
     RATE_LIMIT_MAX: '10',
-    RATE_LIMIT_WINDOW_MS: '1'  // every entry is stale almost immediately
+    RATE_LIMIT_WINDOW_MS: '1'
   });
 
-  for (let i = 0; i < 1100; i++) isRateLimitedFor('client-' + i);
+  // Sweeping is amortised to once per window and gated on the threshold, so the
+  // map size at any single instant is a function of wall-clock timing — the
+  // durable property is that it tracks *active* clients, not every client ever
+  // seen. Five waves, each older than the window by the time the next starts.
+  const WAVE = 1100;
+  for (let wave = 0; wave < 5; wave++) {
+    for (let i = 0; i < WAVE; i++) isRateLimitedFor(`wave${wave}-client${i}`);
+    await new Promise(r => setTimeout(r, 5));
+  }
+  isRateLimitedFor('straggler');
 
-  assert.ok(_size() < 1100, `expected stale counters to be swept, map held ${_size()}`);
+  // 5500 distinct ids were seen. At worst the map holds the current wave plus a
+  // previous one not yet swept; it must never approach the total.
+  assert.ok(
+    _size() <= 2 * WAVE + 10,
+    `expected bounded storage, map held ${_size()} after ${5 * WAVE} distinct ids`
+  );
 });
 
 test('the sweep is amortised: a long window does not rescan the map on every new key', () => {

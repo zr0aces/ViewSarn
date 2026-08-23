@@ -14,6 +14,10 @@ npm test                           # node --test test/*.test.js
 node --test test/auth.test.js      # single test file
 node --test --test-name-pattern='rate' test/rateLimit.test.js  # single test
 
+npm run release                    # bump CalVer version (YYYY.M.MINOR) and sync files
+npm run version:sync               # sync version from VERSION file to target files
+npm run version:check              # check that all files match VERSION file (CI gate)
+
 docker compose up --build          # full stack with fonts (see caveat below)
 node test-convert.js               # manual smoke test against a RUNNING server on :3000
 ./convert-cli.sh --file page.html --png --single --output out.png   # CLI client, --help for all flags
