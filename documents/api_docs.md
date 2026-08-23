@@ -68,6 +68,8 @@ All authenticated endpoints are subject to rate limiting.
 
 - **120 requests** per **60 seconds** per API key (or IP if no key)
 
+Identity is the API key when one is supplied. Without a key it is the client IP — and behind a reverse proxy that is the proxy's address unless the service is started with `TRUST_PROXY` set, in which case every anonymous caller shares one bucket.
+
 ### Rate Limit Headers
 
 Every response includes:

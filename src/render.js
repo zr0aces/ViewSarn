@@ -89,8 +89,18 @@ async function renderHtmlToBuffer(html, opts) {
 
     let context;
     let timer;
+    // The deadline can fire while newContext is still in flight, in which case
+    // the finally below runs before there is anything to close. Whoever gets
+    // there second does the closing: the finally if the context already exists,
+    // otherwise the render itself once it sees it has been abandoned.
+    let abandoned = false;
     const work = (async () => {
-        context = await b.newContext(contextOptions);
+        const created = await b.newContext(contextOptions);
+        context = created;
+        if (abandoned) {
+            await created.close().catch(() => {});
+            throw httpError(504, 'Render abandoned before it started');
+        }
         const page = await context.newPage();
 
         const waitUntil = WAIT_UNTIL.has(opts.waitUntil) ? opts.waitUntil : 'networkidle';
@@ -172,7 +182,9 @@ async function renderHtmlToBuffer(html, opts) {
         return await Promise.race([work, deadline]);
     } finally {
         clearTimeout(timer);
+        abandoned = true;
         // Closing the context drops its pages; closing both is redundant work.
+        // It also aborts whatever the abandoned render was still awaiting.
         if (context) await context.close().catch(() => {});
         releaseSlot();
     }

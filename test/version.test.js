@@ -1,16 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const path = require('node:path');
-const { execSync } = require('node:child_process');
 
-const CALVER_REGEX = /^(?<year>2\d{3})\.(?<month>[1-9]|1[0-2])\.(?<minor>\d+)$/;
-const rootDir = path.resolve(__dirname, '..');
+// Import the real definitions rather than restating them: a test that carries
+// its own copy of the regex passes happily while the scripts drift away.
+const { CALVER_REGEX, VERSION_FILE, parseCalver, compareCalver } = require('../scripts/calver');
+const { run } = require('../scripts/sync-version');
+const { parseArgs, nextVersion } = require('../scripts/release');
 
 test('VERSION file exists and contains valid CalVer string', () => {
-  const versionFile = path.join(rootDir, 'VERSION');
-  assert.ok(fs.existsSync(versionFile), 'VERSION file must exist at repo root');
-  const version = fs.readFileSync(versionFile, 'utf8').trim();
+  assert.ok(fs.existsSync(VERSION_FILE), 'VERSION file must exist at repo root');
+  const version = fs.readFileSync(VERSION_FILE, 'utf8').trim();
   assert.match(version, CALVER_REGEX, 'VERSION must match CalVer format YYYY.M.MINOR');
 });
 
@@ -23,10 +23,37 @@ test('CalVer regex rejects invalid month formats with leading zeroes and invalid
   assert.ok(CALVER_REGEX.test('2026.12.10'), 'Must accept valid CalVer 2026.12.10');
 });
 
-test('sync-version.mjs --check passes on synced repository', () => {
-  const output = execSync('node scripts/sync-version.mjs --check', {
-    cwd: rootDir,
-    encoding: 'utf8'
-  });
-  assert.match(output, /All target files match VERSION/);
+test('every target file matches VERSION', () => {
+  const { hasDivergence, results } = run({ write: false });
+  const diverged = results.filter(r => r.status !== 'synced');
+  assert.equal(hasDivergence, false, `out of sync: ${JSON.stringify(diverged)}`);
+});
+
+test('the release minor resets when the month or year changes', () => {
+  const august = new Date(2026, 7, 15); // month is 0-indexed
+  assert.deepEqual(nextVersion({ year: 2026, month: 8, minor: 2 }, august), { year: 2026, month: 8, minor: 3 });
+  assert.deepEqual(nextVersion({ year: 2026, month: 7, minor: 5 }, august), { year: 2026, month: 8, minor: 1 });
+  assert.deepEqual(nextVersion({ year: 2025, month: 12, minor: 9 }, august), { year: 2026, month: 8, minor: 1 });
+  assert.deepEqual(nextVersion(null, august), { year: 2026, month: 8, minor: 1 }, 'a first release starts at .1');
+});
+
+test('--version requires an operand instead of silently auto-bumping', () => {
+  assert.throws(() => parseArgs(['--version']), /requires a version operand/);
+  assert.throws(() => parseArgs(['-v']), /requires a version operand/);
+  assert.throws(() => parseArgs(['--version=']), /requires a value/);
+  assert.throws(() => parseArgs(['--version', '--force']), /requires a version operand/);
+  assert.throws(() => parseArgs(['--nonsense']), /Unknown argument/);
+
+  assert.deepEqual(parseArgs(['--version', '2026.8.5']), { customVersion: '2026.8.5', force: false });
+  assert.deepEqual(parseArgs(['--version=2026.8.5']), { customVersion: '2026.8.5', force: false });
+  assert.deepEqual(parseArgs(['--force']), { customVersion: null, force: true });
+});
+
+test('CalVer ordering detects a version that would move backwards', () => {
+  const current = parseCalver('2026.8.2');
+  assert.ok(compareCalver(parseCalver('2026.8.3'), current) > 0, 'a later minor is newer');
+  assert.ok(compareCalver(parseCalver('2026.9.1'), current) > 0, 'a later month is newer');
+  assert.ok(compareCalver(parseCalver('2026.8.1'), current) < 0, 'an earlier minor is older');
+  assert.ok(compareCalver(parseCalver('2025.12.9'), current) < 0, 'an earlier year is older');
+  assert.equal(compareCalver(parseCalver('2026.8.2'), current), 0, 'the same version is not newer');
 });

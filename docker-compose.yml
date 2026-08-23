@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   viewsarn:
     build: .
@@ -12,57 +10,88 @@ services:
       - PORT=3000
       - OUTPUT_DIR=/output
       - LOG_LEVEL=info
-      
+
       # Authentication (choose one method)
       # Method 1: Multiple API keys via file (recommended)
       - API_KEYS_FILE=/app/apikeys.txt
       # Method 2: Single API key (uncomment to use)
       # - API_KEY=your-secret-key-here
-      
+      #
+      # Setting the variable is NOT the same as enabling auth: if neither a key
+      # file nor API_KEY resolves, the service starts UNAUTHENTICATED and only
+      # logs a warning. Confirm with:
+      #   curl localhost:3000/health   ->  "apiAuthFileInUse": true
+
       # API Keys Auto-reload Interval (milliseconds)
       - API_KEYS_RELOAD_MS=30000
-      
-      # Rate Limiting (shapes arrival rate, not concurrent renders)
+
+      # Set when a reverse proxy or ingress sits in front, to the number of
+      # proxy hops. Left unset, req.ip is the proxy's address and every
+      # anonymous caller is rate limited as a single client.
+      # - TRUST_PROXY=1
+
+      # Rate Limiting — shapes arrival rate, not concurrent renders.
+      # Counters are per process: N replicas allow N x RATE_LIMIT_MAX overall.
       - RATE_LIMIT_MAX=120
       - RATE_LIMIT_WINDOW_MS=60000
 
-      # Render limits — these bound peak memory. Pin RENDER_CONCURRENCY rather
-      # than inheriting the host CPU count; budget ~100-150MB per concurrent
-      # render on top of the ~130MB baseline.
-      - RENDER_CONCURRENCY=4
+      # --- Render limits: these are what bound peak memory ---
+      #
+      # Budget against the 2G limit at the bottom of this file:
+      #   baseline                      ~130 MB
+      #   2 renders x ~150 MB            ~300 MB
+      #   32 queued x 15 MB body         ~480 MB
+      #                                 ---------
+      #                                  ~910 MB, comfortably inside 2G
+      #
+      # Raise these together with the memory and cpus limits below, never alone.
+
+      # Concurrent Chromium pages. Pinned deliberately: the default is
+      # os.availableParallelism(), which follows CPU affinity and NOT the CFS
+      # quota that `cpus:` sets — on a 32-core host it would return 32.
+      - RENDER_CONCURRENCY=2
+
       # Requests allowed to wait for a slot before the service returns 503.
-      # Each one holds its parsed body, so this bounds the backlog too.
-      - RENDER_QUEUE_MAX=100
+      # Each one holds its parsed body, so this is the backlog memory bound.
+      - RENDER_QUEUE_MAX=32
+
       # Per-render deadline before the service returns 504.
       - RENDER_TIMEOUT_MS=60000
 
-      # Node.js Configuration
+      # Max request body. Raising this multiplies the queue budget above:
+      # RENDER_QUEUE_MAX x BODY_LIMIT is the worst-case backlog.
+      - BODY_LIMIT=15mb
+
+      # Node.js Configuration (already set in the image; explicit here for
+      # anyone building a variant — controls JSON vs pretty logging)
       - NODE_ENV=production
     volumes:
       # Mount output directory for saved files
       - ./output:/output
-      
+
       # Mount API keys file (read-only)
       # Create apikeys.txt in project root before starting
       - ./apikeys.txt:/app/apikeys.txt:ro
-    
-    # Shared memory size for Chromium browser
-    # Increase for large documents or high concurrency
+
+    # Shared memory for Chromium. The 64MB default crashes pages under load.
+    # Increase for large documents or higher RENDER_CONCURRENCY.
     shm_size: "1gb"
-    
+
     # Restart policy
     restart: unless-stopped
-    
+
     # Health check
     # Probes with node, not curl: the slim base image has no curl installed.
+    # /health needs no API key, but it is rate limited like any other request.
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    
+
     # Resource limits (optional but recommended for production)
+    # Keep in step with RENDER_CONCURRENCY and RENDER_QUEUE_MAX above.
     deploy:
       resources:
         limits:

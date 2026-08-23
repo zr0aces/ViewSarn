@@ -246,6 +246,11 @@ server {
         # Rate limiting (additional layer)
         limit_req zone=viewsarn_limit burst=20 nodelay;
     }
+
+    # NOTE: forwarding X-Forwarded-For above only helps if ViewSarn is told to
+    # trust it. Without TRUST_PROXY set, req.ip is nginx's address and every
+    # anonymous caller shares one rate-limit bucket — one noisy client then
+    # rate limits everyone. Set TRUST_PROXY=1 (one proxy hop) on the service.
     
     location /health {
         proxy_pass http://viewsarn_backend;
@@ -497,6 +502,10 @@ spec:
           value: "100"
         - name: RENDER_TIMEOUT_MS
           value: "60000"
+        # Ingress terminates in front of the pod, so req.ip is the proxy's
+        # address unless this is set. Count the hops your ingress adds.
+        - name: TRUST_PROXY
+          value: "1"
         - name: LOG_LEVEL
           value: info
         - name: API_KEY

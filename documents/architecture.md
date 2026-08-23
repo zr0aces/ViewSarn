@@ -397,6 +397,7 @@ ViewSarn utilizes GitHub Actions for continuous integration and automated delive
 ### Concurrency
 
 - **Node.js single-threaded** but asynchronous
+- **Rate-limit identity is the API key, or the client IP when no key is sent.** Behind a reverse proxy the IP is the proxy's unless `TRUST_PROXY` is set, which collapses every anonymous caller into a single bucket
 - **Renders are capped by `RENDER_CONCURRENCY`** (default: `os.availableParallelism()`) — each in-flight render holds a Chromium page, and page memory drives peak RSS
 - **Overflow queues**, bounded by `RENDER_QUEUE_MAX` (default 100); past that the service returns `503` with `Retry-After` rather than accumulating parsed request bodies
 - **Every render has a deadline** of `RENDER_TIMEOUT_MS` (default 60s), returning `504`. Without it a wedged page holds its slot indefinitely and enough of them stall the service

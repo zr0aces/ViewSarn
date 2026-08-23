@@ -9,6 +9,16 @@ const num = (value, fallback, min = 1) => {
     return Number.isFinite(n) && n >= min ? n : fallback;
 };
 
+// Accepts what Express accepts: false (default), true, a hop count, or a list
+// of trusted addresses/subnets.
+function parseTrustProxy(value) {
+    if (value === undefined || value === '' || value === 'false') return false;
+    if (value === 'true') return true;
+    const hops = Number(value);
+    if (Number.isInteger(hops) && hops >= 0) return hops;
+    return value;
+}
+
 module.exports = {
     PORT: num(process.env.PORT, 3000, 0),
     OUTPUT_DIR: process.env.OUTPUT_DIR || '/output',
@@ -27,6 +37,11 @@ module.exports = {
     // slot forever and RENDER_CONCURRENCY such requests wedge the service.
     RENDER_TIMEOUT_MS: num(process.env.RENDER_TIMEOUT_MS, 60_000),
     BODY_LIMIT: process.env.BODY_LIMIT || '15mb',
+    // Express `trust proxy`. Off by default: behind a reverse proxy this must be
+    // on or every unauthenticated client shares the proxy's IP — one bucket for
+    // everyone. On without a trusted proxy in front is worse: clients then spoof
+    // X-Forwarded-For and get a fresh bucket per request.
+    TRUST_PROXY: parseTrustProxy(process.env.TRUST_PROXY),
     LOG_LEVEL: process.env.LOG_LEVEL || 'info',
     IS_PRODUCTION: process.env.NODE_ENV === 'production',
 };

@@ -75,6 +75,7 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | | Requirement |
 |---|---|
 | ✅ **R-3.1** | Requests are counted per API key, or per client IP when no key is supplied, in a fixed window of `RATE_LIMIT_WINDOW_MS`. |
+| ☑️ **R-3.6** | The client IP must be resolved through `TRUST_PROXY` (Express `trust proxy`). Behind a reverse proxy without it, every anonymous caller resolves to the proxy's address and shares one bucket, so one noisy client rate limits everyone. Enabling it without a trusted proxy in front is the opposite failure: callers spoof `X-Forwarded-For` and get a fresh bucket per request. Default is `false` — correct only when the service is reached directly. |
 | ☑️ **R-3.2** | Over `RATE_LIMIT_MAX` in a window, the response is `429` with `Retry-After` and a `retry_after_seconds` body field. (Tests cover the limiter decision, not the HTTP response.) |
 | ☑️ **R-3.3** | Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` (seconds). |
 | ✅ **R-3.4** | `RATE_LIMIT_MAX=0` rejects the very first request. A configured zero means zero, not "fall back to the default". |
@@ -90,7 +91,8 @@ The service runs one Chromium instance; every in-flight render holds a page, and
 |---|---|
 | ☑️ **R-4.1** | One browser instance is launched at startup and reused. Each request gets its own isolated context, closed when the request ends. |
 | ✅ **R-4.2** | At most `RENDER_CONCURRENCY` renders run at once. Beyond that, requests wait for a slot. |
-| ☑️ **R-4.3** | A render that exceeds `RENDER_TIMEOUT_MS` is abandoned with `504` **and its slot is released**. No single request may hold a slot indefinitely: with the concurrency cap in place, enough wedged renders would otherwise stall the service entirely. |
+| ✅ **R-4.3** | A render that exceeds `RENDER_TIMEOUT_MS` is abandoned with `504` **and its slot is released**. No single request may hold a slot indefinitely: with the concurrency cap in place, enough wedged renders would otherwise stall the service entirely. |
+| ✅ **R-4.8** | An abandoned render must not leak its browser context, including when the deadline fires *before* the context finishes being created. Whichever side gets there second closes it. |
 | ✅ **R-4.4** | The wait queue is bounded by `RENDER_QUEUE_MAX`; past it, requests get `503` with `Retry-After`. Queued requests still hold their parsed bodies, so an unbounded queue only moves the OOM from pages to backlog. |
 | ☑️ **R-4.5** | Request bodies are capped at `BODY_LIMIT` (default 15mb). |
 | ☑️ **R-4.6** | Peak memory is therefore bounded by roughly (`RENDER_CONCURRENCY` × page) + (`RENDER_QUEUE_MAX` × `BODY_LIMIT`). Operators sizing a container need both numbers, not just the first. |
@@ -152,3 +154,5 @@ Requirements added or changed after the initial specification, with the reason. 
 | R-1.6 | Tightened | Paper lookup moved to an object map, where `format: "constructor"` would otherwise resolve to an inherited property. |
 | R-1.13, R-1.14 | Added | A fixed 100ms sleep was replaced by waiting on webfonts and a painted frame; the font wait then needed its own bound to satisfy R-4.3. |
 | R-5.3 | Added | `pino-pretty` was running in production, costing a worker thread and emitting non-parseable logs while the docs claimed JSON. |
+| R-4.8 | Added | The render deadline could fire while `newContext` was still in flight. The cleanup path saw no context to close, then the context arrived with nobody waiting for it — leaking a context and its pages for the life of the process, and quietly exceeding the concurrency cap since the slot had already been returned. |
+| R-3.6 | Added | `trust proxy` was never set while the deployment guide recommends an nginx reverse proxy that forwards `X-Forwarded-For`. Every anonymous client therefore resolved to the proxy's IP and shared a single rate-limit bucket. |

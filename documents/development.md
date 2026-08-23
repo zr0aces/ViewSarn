@@ -184,6 +184,7 @@ Centralizes all configuration from environment variables.
 - `RENDER_QUEUE_MAX` - Max requests waiting for a render slot before `503` (default: `100`)
 - `RENDER_TIMEOUT_MS` - Per-render deadline before `504` (default: `60000`)
 - `BODY_LIMIT` - Max request body size (default: `15mb`)
+- `TRUST_PROXY` - Express `trust proxy` setting (default: `false`). Set to `true`, a hop count, or a trusted subnet list when running behind a reverse proxy — otherwise every unauthenticated client is rate limited as one
 - `LOG_LEVEL` - Pino log level
 - `IS_PRODUCTION` - Derived from `NODE_ENV`; selects raw JSON logging over `pino-pretty`
 
@@ -478,8 +479,8 @@ The suite deliberately stops at the browser boundary. Anything needing a real re
 - **Quotes**: Single quotes for strings
 - **Naming**: camelCase for variables/functions, UPPER_CASE for constants
 - **Async/Await**: Preferred over callbacks
-- **Modules**: CommonJS (`require` / `module.exports`) throughout
-- **Note**: `server.js` and `test/` use 2-space indentation; the 4-space rule applies to `src/`
+- **Modules**: CommonJS (`require` / `module.exports`) throughout — including `scripts/`. No ESM, no `.mjs`; release tooling is plain CJS so tests can `require` it directly.
+- **Note**: `server.js`, `test/`, and `scripts/` use 2-space indentation; the 4-space rule applies to `src/`
 
 **Example:**
 ```javascript
@@ -652,10 +653,17 @@ The `VERSION` file at the repository root contains the active version string. Al
 
 | Command | Description |
 |---------|-------------|
-| `npm run release` | Automatically calculates next CalVer based on system date and syncs all files |
-| `npm run release -- --version 2026.8.5` | Manually overrides the release version |
+| `npm run release` | Calculates the next CalVer from the system date and syncs all files |
+| `npm run release -- --version 2026.8.5` | Releases that exact version. The operand is required — the flag never falls through to an automatic bump |
+| `npm run release -- --force` | Allows a version that is not newer than the current `VERSION` |
 | `npm run version:sync` | Propagates `VERSION` to all target files |
-| `npm run version:check` | Verifies all target files match `VERSION` (used as a CI gate) |
+| `npm run version:check` | Verifies all target files match `VERSION`. Runs in CI (`.github/workflows/ci.yml`) on every push and pull request |
+
+`release` refuses a version that is not newer than the current one, so a pre-dated `VERSION` or a skewed clock cannot silently publish backwards; `--force` overrides.
+
+`check` and `sync` run the same rules, and a file counts as in sync exactly when applying them changes nothing. A rule that `sync` writes but `check` fails to assert therefore cannot exist — including non-version text like the `:latest` pull tag, which `sync` pins and `check` now verifies.
+
+Scripts live in `scripts/` and are CommonJS: `calver.js` holds the one definition of the CalVer format, and `release.js` calls `sync-version.js` in-process rather than spawning it.
 
 ### Release Steps
 

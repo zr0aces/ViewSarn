@@ -37,7 +37,7 @@ Fonts (Sarabun, Noto Sans Thai, Google Sans) are installed into the OS font cach
 
 - `src/config.js` — every env var is read **once at require time**. Anything that changes config must clear `require.cache` for `src/config.js` *and* the consuming module — `test/helpers.js` (`loadFreshModules`) does this for the tests. Its `num()` takes a `min`: `0` is valid for `PORT` and `RATE_LIMIT_MAX`, but a `0` concurrency or interval would wedge the service, so those floor at 1.
 - `src/auth.js` — validates `Authorization: Bearer <key>` or `X-API-Key`. Precedence: keys file (`API_KEYS_FILE`, one key per line, `#` comments) wins over `API_KEY` env. **Fails open**: if neither is configured, `validateAuth` returns `valid: true` and the service is unauthenticated (server logs a warning at boot). The file is hot-reloaded on a `setInterval` (`API_KEYS_RELOAD_MS`, default 30s).
-- `src/rateLimit.js` — fixed-window counter in an in-memory `Map`, **per process**. Multiple replicas do not share limits. Stale entries are swept once the map passes 1024 keys and at most once per window — sweeping per insert is O(n) per request under an IP spray, which is exactly the load a limiter faces. A new id and an expired window open a window through the same path, which is what lets `RATE_LIMIT_MAX=0` reject request one. Rate-limit identity is the API key when supplied, else the client IP.
+- `src/rateLimit.js` — fixed-window counter in an in-memory `Map`, **per process**. Multiple replicas do not share limits. Stale entries are swept once the map passes 1024 keys and at most once per window — sweeping per insert is O(n) per request under an IP spray, which is exactly the load a limiter faces. A new id and an expired window open a window through the same path, which is what lets `RATE_LIMIT_MAX=0` reject request one. Rate-limit identity is the API key when supplied, else the client IP — and `req.ip` is the proxy's address unless `TRUST_PROXY` is set (`server.js` passes it to Express `trust proxy`), which silently merges every anonymous caller into one bucket.
 - `src/render.js` — owns a **single module-level browser instance** shared by all requests; each request gets a fresh `BrowserContext`, closed in a `finally` (closing the context drops its pages — don't also close the page). Never launch a second browser; `initBrowser()` is idempotent and `closeBrowser()` runs on SIGTERM/SIGINT shutdown. Renders pass through a slot semaphore capped at `RENDER_CONCURRENCY`; overflow queues up to `RENDER_QUEUE_MAX`, then rejects with a `503`-tagged error. Every render races a `RENDER_TIMEOUT_MS` deadline (`504`) — `page.evaluate` has no timeout of its own, so without the deadline a wedged page pins its slot and enough of them stall the service. Errors carry `.status`, which `server.js` maps to the response code. `test/concurrency.test.js` covers all of it; getting the release path wrong deadlocks the service.
 
 The interesting logic is the scale computation in `renderHtmlToBuffer`: measure rendered content size in-page, convert paper size + margins to px at 96 DPI, then `scale = availableWidth / contentWidth` (also fit height when `single`), clamped to 0.1–2. An explicit `options.scale` overrides the computed value. PDF passes `scale` to `page.pdf()`; PNG instead resizes the viewport and uses `deviceScaleFactor = dpi / 96`, with `fullPage` only when `single`.
@@ -50,11 +50,11 @@ Logging is Pino (`src/logger.js`), driven by `LOG_LEVEL`. `pino-pretty` is a **d
 
 ## Conventions
 
-CommonJS (`require`/`module.exports`), 4-space indent in `src/`, 2-space in `server.js` and tests. No linter, no build step, no framework in tests — plain `node:test` + `node:assert/strict`.
+CommonJS (`require`/`module.exports`) everywhere, `scripts/` included — no ESM, no `.mjs`. 4-space indent in `src/`; 2-space in `server.js`, `test/`, and `scripts/`. No linter, no build step, no framework in tests — plain `node:test` + `node:assert/strict`.
 
 ## CI
 
-`.github/workflows/docker-publish.yml` builds and pushes to GHCR **only on tags `v*` and published releases**. Nothing runs tests in CI — run `npm test` locally before pushing.
+`.github/workflows/ci.yml` runs `npm test` and `npm run version:check` on every push and pull request. `.github/workflows/docker-publish.yml` builds and pushes to GHCR **only on tags `v*` and published releases**.
 
 ## Docs
 

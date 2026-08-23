@@ -3,7 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
 
-const { PORT, OUTPUT_DIR, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, API_KEY_ENV, API_KEYS_FILE } = require('./src/config');
+const { PORT, OUTPUT_DIR, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, API_KEY_ENV, API_KEYS_FILE } = require('./src/config');
 const logger = require('./src/logger');
 const { validateAuth, isAuthFileInUse } = require('./src/auth');
 const { isRateLimitedFor } = require('./src/rateLimit');
@@ -22,6 +22,9 @@ async function ensureDir(dir) {
 
   const app = express();
   app.disable('x-powered-by');
+  // Without this, req.ip behind a reverse proxy is the proxy's address, so every
+  // unauthenticated caller shares one rate-limit bucket.
+  app.set('trust proxy', TRUST_PROXY);
   app.use(express.json({ limit: BODY_LIMIT }));
 
   // auth & rate-limit middleware
