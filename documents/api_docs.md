@@ -251,6 +251,12 @@ Common causes:
 }
 ```
 
+**413 Payload Too Large** - Request body exceeded `BODY_LIMIT`
+
+Raised by the JSON body parser before the route runs, so the limit applies to the whole body, not just the `html` field. Default is 15mb; see the sizing worksheet in the deployment guide, since `RENDER_QUEUE_MAX` x `BODY_LIMIT` is the backlog memory bound.
+
+> **Note — parser errors are not JSON.** `413`, and a malformed JSON body (`400`), are produced by Express's default error handler and come back as an **HTML** page with `Content-Type: text/html`, not the `{"error": "..."}` shape every other error uses. Clients must not assume a JSON body on those two codes. Everything raised by the route itself — `400` for a missing `html`, `401`, `429`, `500`, `503`, `504` — is JSON.
+
 **503 Service Unavailable** - Render queue is full
 
 ```json

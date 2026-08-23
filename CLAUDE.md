@@ -44,6 +44,8 @@ The interesting logic is the scale computation in `renderHtmlToBuffer`: measure 
 
 `options.png`, `single`, `format` (A4/A5/LETTER/LEGAL), `orientation`, `margin`, `dpi`, `scale`, `filename` come from the request body; unknown formats silently fall back to A4.
 
+Error bodies are JSON except for the two the body parser raises before the route — `413` (over `BODY_LIMIT`) and a malformed-JSON `400` — which Express's default handler emits as HTML. `documents/specification.md` tracks that as R-1.16.
+
 `body.save: true` writes to `OUTPUT_DIR` and returns JSON metadata instead of streaming the file. `body.outPath` is joined under `OUTPUT_DIR` after stripping leading `../` — keep that normalization if you touch the save path.
 
 Logging is Pino (`src/logger.js`), driven by `LOG_LEVEL`. `pino-pretty` is a **devDependency** and is only wired up when `NODE_ENV !== 'production'` — it costs a worker thread and emits non-parseable output, so production logs raw JSON. The Dockerfile installs with `--omit=dev`, so requiring `pino-pretty` unconditionally would crash the image on boot.

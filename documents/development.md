@@ -183,7 +183,7 @@ Centralizes all configuration from environment variables.
 - `RENDER_CONCURRENCY` - Max simultaneous Chromium pages (default: `os.availableParallelism()`)
 - `RENDER_QUEUE_MAX` - Max requests waiting for a render slot before `503` (default: `100`)
 - `RENDER_TIMEOUT_MS` - Per-render deadline before `504` (default: `60000`)
-- `BODY_LIMIT` - Max request body size (default: `15mb`)
+- `BODY_LIMIT` - Max request body size (default: `15mb`). Multiplies with `RENDER_QUEUE_MAX` to bound backlog memory — see the sizing worksheet in `deployment.md`
 - `TRUST_PROXY` - Express `trust proxy` setting (default: `false`). Set to `true`, a hop count, or a trusted subnet list when running behind a reverse proxy — otherwise every unauthenticated client is rate limited as one
 - `LOG_LEVEL` - Pino log level
 - `IS_PRODUCTION` - Derived from `NODE_ENV`; selects raw JSON logging over `pino-pretty`

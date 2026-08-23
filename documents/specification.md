@@ -37,6 +37,8 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-1.5** | `outPath` is resolved **under** `OUTPUT_DIR`. Leading `../` segments are stripped so a caller cannot write outside it. |
 | ☑️ **R-1.6** | Paper size comes from `format` (`A4`, `A5`, `LETTER`, `LEGAL`, case-insensitive). An unrecognised value falls back to A4 rather than erroring, and must not resolve to an inherited object property. |
 | ☑️ **R-1.7** | Margins accept `mm`, `cm`, and `in`. A bare number is read as mm. Other CSS units are not parsed. |
+| ☑️ **R-1.15** | Request bodies over `BODY_LIMIT` are rejected with `413` by the body parser, before the route runs. |
+| ⬜ **R-1.16** | Errors should carry a JSON `{ "error": ... }` body. **Not met for parser-level errors:** a `413` and a malformed-JSON `400` come from Express's default handler as HTML. Every error raised by the route itself is JSON. Closing this needs a JSON error handler mounted after the body parser. |
 
 ### Scaling
 
@@ -130,6 +132,8 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 |---|---|---|
 | `200` | Converted, or saved | R-1.1, R-1.4 |
 | `400` | `html` missing or not a string | R-1.2 |
+| `400` | Malformed JSON body — **HTML response** | R-1.16 |
+| `413` | Body exceeded `BODY_LIMIT` — **HTML response** | R-1.15, R-1.16 |
 | `401` | Key missing or wrong, where auth is configured | R-2.6 |
 | `429` | Rate limit exceeded | R-3.2 |
 | `500` | Render failed | — |

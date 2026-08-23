@@ -496,10 +496,16 @@ spec:
           value: "60000"
         # Pin this against the pod memory limit below rather than letting it
         # default to the node's CPU count, which ignores the cgroup limit.
+        # Budget against the 3Gi limit below (see "Sizing worksheet" above):
+        #   130MB baseline + 4 x 150MB renders + 64 x 15mb queued = ~1.7Gi
+        # RENDER_CONCURRENCY must be pinned: its default follows CPU affinity,
+        # not the CFS quota that resources.limits.cpu sets.
         - name: RENDER_CONCURRENCY
           value: "4"
         - name: RENDER_QUEUE_MAX
-          value: "100"
+          value: "64"
+        - name: BODY_LIMIT
+          value: "15mb"
         - name: RENDER_TIMEOUT_MS
           value: "60000"
         # Ingress terminates in front of the pod, so req.ip is the proxy's
@@ -755,11 +761,42 @@ Queued requests still hold their parsed bodies, so the queue is bounded too: pas
 
 Each render also carries a `RENDER_TIMEOUT_MS` deadline (default 60s, returning `504`), so a wedged page releases its slot instead of holding it until restart.
 
-Size it against the container memory limit — roughly 100-150MB of headroom per concurrent render on top of the ~130MB baseline — and set it explicitly in production rather than inheriting the host's CPU count:
+#### Sizing worksheet
+
+Work backwards from the container memory limit. Peak is:
+
+```
+baseline (~130 MB)
+  + RENDER_CONCURRENCY x ~150 MB      # a Chromium page under load
+  + RENDER_QUEUE_MAX   x BODY_LIMIT   # queued requests hold parsed bodies
+```
+
+Worked example for a 2G container, which is what `docker-compose.yml` ships:
+
+| Term | Value | Memory |
+|---|---|---|
+| baseline | — | ~130 MB |
+| `RENDER_CONCURRENCY` | 2 | ~300 MB |
+| `RENDER_QUEUE_MAX` x `BODY_LIMIT` | 32 x 15mb | ~480 MB |
+| **Peak** | | **~910 MB** — inside 2G |
+
+Two traps this catches:
+
+- **The queue term dominates.** The defaults (`RENDER_QUEUE_MAX=100`, `BODY_LIMIT=15mb`) allow ~1.5GB of backlog on their own, before a single page is rendered. Cut the queue before cutting `BODY_LIMIT` — shrinking the body limit changes what callers are allowed to send, while shrinking the queue only makes a saturated service shed load sooner with `503`.
+- **`RENDER_CONCURRENCY` must be pinned in a container.** Its default, `os.availableParallelism()`, follows CPU *affinity* and not the CFS quota that `--cpus` / `deploy.resources.limits.cpus` sets. On a 32-core host with `cpus: '1.0'` it returns 32, not 1. Match it to the CPU limit as well as the memory budget — four renders on one CPU only queue on the CPU instead.
+
+Raise these together with the resource limits, never alone:
 
 ```yaml
 environment:
-  - RENDER_CONCURRENCY=4
+  - RENDER_CONCURRENCY=2
+  - RENDER_QUEUE_MAX=32
+  - BODY_LIMIT=15mb
+deploy:
+  resources:
+    limits:
+      memory: 2G
+      cpus: '1.0'
 ```
 
 ### 4. Rate Limiting Best Practices
