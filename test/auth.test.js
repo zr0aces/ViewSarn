@@ -1,35 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { loadFreshModules } = require('./helpers');
 
-function loadFreshAuthModule(env) {
-  const previous = {
-    API_KEY: process.env.API_KEY,
-    API_KEYS_FILE: process.env.API_KEYS_FILE,
-    API_KEYS_RELOAD_MS: process.env.API_KEYS_RELOAD_MS,
-    LOG_LEVEL: process.env.LOG_LEVEL
-  };
-
-  Object.assign(process.env, env);
-  process.env.LOG_LEVEL = 'silent';
-
-  const configPath = require.resolve('../src/config');
-  const loggerPath = require.resolve('../src/logger');
-  const authPath = require.resolve('../src/auth');
-
-  delete require.cache[configPath];
-  delete require.cache[loggerPath];
-  delete require.cache[authPath];
-
-  const auth = require('../src/auth');
-
-  for (const [key, value] of Object.entries(previous)) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-
-  return auth;
-}
+const loadFreshAuthModule = (env) => loadFreshModules(env, ['../src/auth']);
 
 function makeRequest(headers = {}) {
   const normalized = Object.fromEntries(

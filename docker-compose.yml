@@ -22,10 +22,20 @@ services:
       # API Keys Auto-reload Interval (milliseconds)
       - API_KEYS_RELOAD_MS=30000
       
-      # Rate Limiting
+      # Rate Limiting (shapes arrival rate, not concurrent renders)
       - RATE_LIMIT_MAX=120
       - RATE_LIMIT_WINDOW_MS=60000
-      
+
+      # Render limits — these bound peak memory. Pin RENDER_CONCURRENCY rather
+      # than inheriting the host CPU count; budget ~100-150MB per concurrent
+      # render on top of the ~130MB baseline.
+      - RENDER_CONCURRENCY=4
+      # Requests allowed to wait for a slot before the service returns 503.
+      # Each one holds its parsed body, so this bounds the backlog too.
+      - RENDER_QUEUE_MAX=100
+      # Per-render deadline before the service returns 504.
+      - RENDER_TIMEOUT_MS=60000
+
       # Node.js Configuration
       - NODE_ENV=production
     volumes:
@@ -44,8 +54,9 @@ services:
     restart: unless-stopped
     
     # Health check
+    # Probes with node, not curl: the slim base image has no curl installed.
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3

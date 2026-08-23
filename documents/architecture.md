@@ -117,7 +117,7 @@ ViewSarn is a **high-performance, containerized microservice** designed for high
 
 **Responsibilities:**
 - Track request counts per API key or IP
-- Enforce rate limits with sliding windows
+- Enforce rate limits with a fixed window per key/IP
 - Return 429 status when exceeded
 
 **Key Files:**
@@ -397,8 +397,9 @@ ViewSarn utilizes GitHub Actions for continuous integration and automated delive
 ### Concurrency
 
 - **Node.js single-threaded** but asynchronous
-- **Multiple requests processed concurrently**
-- **Chromium handles parallelism internally**
+- **Renders are capped by `RENDER_CONCURRENCY`** (default: `os.availableParallelism()`) — each in-flight render holds a Chromium page, and page memory drives peak RSS
+- **Overflow queues**, bounded by `RENDER_QUEUE_MAX` (default 100); past that the service returns `503` with `Retry-After` rather than accumulating parsed request bodies
+- **Every render has a deadline** of `RENDER_TIMEOUT_MS` (default 60s), returning `504`. Without it a wedged page holds its slot indefinitely and enough of them stall the service
 
 ### Bottlenecks
 
@@ -411,7 +412,7 @@ ViewSarn utilizes GitHub Actions for continuous integration and automated delive
 
 1. **Keep HTML simple** - Reduce render time
 2. **Optimize images** - Use compressed formats
-3. **Limit concurrent requests** - Adjust rate limits
+3. **Limit concurrent requests** - Tune `RENDER_CONCURRENCY` against the container memory limit; rate limits shape arrival rate, not concurrent page count
 4. **Scale horizontally** - Add more replicas
 5. **Use caching** - Cache generated PDFs if possible
 
@@ -427,7 +428,7 @@ ViewSarn utilizes GitHub Actions for continuous integration and automated delive
 
 ### Logs
 
-- **Format:** JSON (structured logging via Pino)
+- **Format:** JSON (structured logging via Pino) when `NODE_ENV=production`; human-readable `pino-pretty` otherwise. `pino-pretty` is a devDependency and runs in a worker thread, so production never pays for it.
 - **Output:** stdout/stderr
 - **Includes:** Request details, errors, performance metrics
 

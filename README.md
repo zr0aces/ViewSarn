@@ -9,8 +9,8 @@ ViewSarn is a high-performance, production-ready microservice that transforms ra
 ## ✨ Key Features
 
 - **🎯 Precision Rendering** - Powered by Playwright Chromium for industry-leading accuracy.
-- **🌐 Multilingual Excellence** - Pre-installed with optimized Thai (Sarabun, Noto) and English (Inter) fonts.
-- **⚡ High Throughput** - Optimized browser instance reuse and intelligent context pooling.
+- **🌐 Multilingual Excellence** - Pre-installed with optimized Thai (Sarabun, Noto Sans Thai) and English (Google Sans) fonts.
+- **⚡ High Throughput** - One long-lived browser instance, an isolated context per request, and a bounded render queue with per-render deadlines.
 - **🔒 Secure by Design** - Dual-mode API key authentication with hot-reload capabilities.
 - **⏱️ Smart Rate Limiting** - Per-key and per-IP protection to ensure system stability.
 - **🐳 Cloud-Ready** - Stateless architecture, fully containerized, and horizontally scalable.
@@ -53,6 +53,7 @@ ViewSarn’s documentation is organized into specialized guides for different ro
 
 | Document | Description |
 |----------|-------------|
+| 📋 **[Specification](documents/specification.md)** | What the service must do — numbered requirements, scope boundaries, and why each one exists. |
 | 🏗️ **[Architecture](documents/architecture.md)** | Deep dive into system design, components, and data flow. |
 | 🚀 **[API Reference](documents/api_docs.md)** | Complete endpoint documentation, options, and client code. |
 | 🐳 **[Deployment Guide](documents/deployment.md)** | Production strategies (Docker, K8s, Cloud Platforms). |

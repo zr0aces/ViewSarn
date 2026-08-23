@@ -1,7 +1,17 @@
 const { chromium } = require('playwright');
+const { RENDER_CONCURRENCY, RENDER_QUEUE_MAX, RENDER_TIMEOUT_MS } = require('./config');
 const logger = require('./logger');
 
-const PAPER_SIZES = new Set(['A4', 'A5', 'LETTER', 'LEGAL']);
+const PAPER_SIZES = {
+    A4: { w: 210, h: 297 },
+    A5: { w: 148, h: 210 },
+    LETTER: { w: 216, h: 279 },
+    LEGAL: { w: 216, h: 356 }
+};
+const WAIT_UNTIL = new Set(['load', 'domcontentloaded', 'networkidle', 'commit']);
+const PX_PER_MM = 96 / 25.4;
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 2;
 
 let browser;
 
@@ -12,7 +22,7 @@ async function initBrowser() {
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
             headless: true
         });
-        logger.info('Browser launched.');
+        logger.info({ concurrency: RENDER_CONCURRENCY }, 'Browser launched.');
     }
     return browser;
 }
@@ -26,6 +36,34 @@ async function closeBrowser() {
     }
 }
 
+// Cap concurrent pages. Every in-flight render holds a Chromium page, so an
+// unbounded burst is what turns a traffic spike into an OOM kill.
+let active = 0;
+const waiting = [];
+
+function httpError(status, message) {
+    return Object.assign(new Error(message), { status });
+}
+
+function acquireSlot() {
+    if (active < RENDER_CONCURRENCY) {
+        active += 1;
+        return Promise.resolve();
+    }
+    // Each queued request still holds its parsed body, so the queue needs its
+    // own ceiling — otherwise the page cap just moves the OOM to the backlog.
+    if (waiting.length >= RENDER_QUEUE_MAX) {
+        return Promise.reject(httpError(503, 'Render queue is full, retry shortly'));
+    }
+    return new Promise(resolve => waiting.push(resolve));
+}
+
+function releaseSlot() {
+    const next = waiting.shift();
+    if (next) next();
+    else active -= 1;
+}
+
 function parseMarginToMm(m) {
     if (!m) return 0;
     if (typeof m === 'number') return m;
@@ -35,88 +73,117 @@ function parseMarginToMm(m) {
     return parseFloat(m);
 }
 
-function clampScale(s) {
-    if (s === null || s === undefined) return null;
-    if (isNaN(s)) return null;
-    if (s < 0.1) return 0.1;
-    if (s > 2) return 2;
-    return s;
+function clamp(s) {
+    return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 }
 
 async function renderHtmlToBuffer(html, opts) {
     const b = await initBrowser();
+    await acquireSlot();
+
     const isPng = !!opts.png;
     const dpi = opts.dpi && Number(opts.dpi) > 0 ? Number(opts.dpi) : 96;
-    const contextOptions = {};
-    if (isPng) {
-        contextOptions.deviceScaleFactor = dpi / 96;
-        contextOptions.viewport = { width: 1280, height: 800 };
-    } else {
-        contextOptions.viewport = null;
-    }
+    const contextOptions = isPng
+        ? { deviceScaleFactor: dpi / 96, viewport: { width: 1280, height: 800 } }
+        : { viewport: null };
 
-    const context = await b.newContext(contextOptions);
-    const page = await context.newPage();
+    let context;
+    let timer;
+    const work = (async () => {
+        context = await b.newContext(contextOptions);
+        const page = await context.newPage();
 
-    try {
-        await page.setContent(html, { waitUntil: 'networkidle', timeout: 60_000 });
-        await new Promise(r => setTimeout(r, 100));
+        const waitUntil = WAIT_UNTIL.has(opts.waitUntil) ? opts.waitUntil : 'networkidle';
+        await page.setContent(html, { waitUntil, timeout: RENDER_TIMEOUT_MS });
 
-        const contentSize = await page.evaluate(() => {
+        // One round-trip: settle the page, then measure it. page.evaluate has no
+        // timeout of its own, so both waits are bounded inside the page — an
+        // unresolvable font would otherwise pin this render's slot forever.
+        const contentSize = await page.evaluate(async () => {
+            await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 2000))]);
+            // Two frames = one painted layout. Replaces a blind 100ms sleep:
+            // same "let it settle" intent, typically ~32ms instead.
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
             const b = document.body; const h = document.documentElement;
             const width = Math.max(b.scrollWidth, b.offsetWidth, h.clientWidth, h.scrollWidth, h.offsetWidth);
             const height = Math.max(b.scrollHeight, b.offsetHeight, h.clientHeight, h.scrollHeight, h.offsetHeight);
             return { width, height };
         });
 
-        const pxPerMm = 96 / 25.4;
-        const paper = (opts.format || 'A4').toUpperCase();
-        const paperMm = (paper === 'A5') ? { w: 148, h: 210 } :
-            (paper === 'LETTER') ? { w: 216, h: 279 } :
-                (paper === 'LEGAL') ? { w: 216, h: 356 } :
-                    { w: 210, h: 297 };
+        const requested = (opts.format || 'A4').toUpperCase();
+        // Object.hasOwn, not a bare lookup: `format: "constructor"` would
+        // otherwise resolve to an inherited property and poison the math.
+        const paper = Object.hasOwn(PAPER_SIZES, requested) ? requested : 'A4';
+        const paperMm = PAPER_SIZES[paper];
 
         let paperWidthMm = paperMm.w, paperHeightMm = paperMm.h;
         if (opts.orientation === 'landscape') [paperWidthMm, paperHeightMm] = [paperHeightMm, paperWidthMm];
 
         const marginMm = parseMarginToMm(opts.margin || '10mm') || 0;
-        const availableWidthPx = Math.max(1, (paperWidthMm - 2 * marginMm) * pxPerMm);
-        const availableHeightPx = Math.max(1, (paperHeightMm - 2 * marginMm) * pxPerMm);
+        const availableWidthPx = Math.max(1, (paperWidthMm - 2 * marginMm) * PX_PER_MM);
+        const availableHeightPx = Math.max(1, (paperHeightMm - 2 * marginMm) * PX_PER_MM);
 
         let scale = availableWidthPx / contentSize.width;
-        if (opts.single) {
-            const scaleH = availableHeightPx / contentSize.height;
-            scale = Math.min(scale, scaleH);
-        }
-        if (opts.scale) {
-            const cl = clampScale(Number(opts.scale));
-            if (cl) scale = cl;
-        }
-        if (scale < 0.1) scale = 0.1;
-        if (scale > 2) scale = 2;
+        if (opts.single) scale = Math.min(scale, availableHeightPx / contentSize.height);
+        // Guard on opts.scale being present first: Number(null) is 0, which would
+        // otherwise clamp to MIN_SCALE and shrink every unscaled render.
+        const override = opts.scale ? Number(opts.scale) : NaN;
+        scale = clamp(Number.isFinite(override) ? override : scale);
 
         let buffer;
         if (isPng) {
             const targetWidth = Math.max(1, Math.ceil(contentSize.width * scale));
-            const targetHeight = opts.single ? Math.max(1, Math.ceil(contentSize.height * scale)) : Math.max(1, Math.ceil(availableHeightPx));
-            try { await page.setViewportSize({ width: targetWidth, height: targetHeight }); } catch (e) { }
+            const targetHeight = opts.single
+                ? Math.max(1, Math.ceil(contentSize.height * scale))
+                : Math.max(1, Math.ceil(availableHeightPx));
+            try {
+                await page.setViewportSize({ width: targetWidth, height: targetHeight });
+            } catch (e) {
+                logger.debug({ err: e, targetWidth, targetHeight }, 'setViewportSize failed, keeping default viewport');
+            }
             buffer = await page.screenshot({ type: 'png', fullPage: !!opts.single });
         } else {
-            const pdfOptions = {
+            const margin = opts.margin || '10mm';
+            buffer = await page.pdf({
                 printBackground: true,
-                format: (PAPER_SIZES.has(paper) ? paper : 'A4'),
+                format: paper, // already narrowed to a PAPER_SIZES key above
                 landscape: opts.orientation === 'landscape',
-                margin: { top: opts.margin || '10mm', bottom: opts.margin || '10mm', left: opts.margin || '10mm', right: opts.margin || '10mm' },
+                margin: { top: margin, bottom: margin, left: margin, right: margin },
                 scale
-            };
-            buffer = await page.pdf(pdfOptions);
+            });
         }
 
         return { buffer, scale, contentSize, paper, orientation: opts.orientation || 'portrait' };
+    })();
+
+    // The deadline covers the whole render, not just page load: screenshot, pdf
+    // and evaluate each have their own ways of never returning.
+    const deadline = new Promise((_, reject) => {
+        timer = setTimeout(
+            () => reject(httpError(504, `Render exceeded ${RENDER_TIMEOUT_MS}ms`)),
+            RENDER_TIMEOUT_MS
+        );
+    });
+    // Closing the context below rejects the abandoned work; swallow it so a lost
+    // race never surfaces as an unhandled rejection.
+    work.catch(() => {});
+
+    try {
+        return await Promise.race([work, deadline]);
     } finally {
-        await page.close();
-        await context.close();
+        clearTimeout(timer);
+        // Closing the context drops its pages; closing both is redundant work.
+        if (context) await context.close().catch(() => {});
+        releaseSlot();
     }
 }
 
-module.exports = { renderHtmlToBuffer, initBrowser, closeBrowser };
+module.exports = {
+    renderHtmlToBuffer,
+    initBrowser,
+    closeBrowser,
+    // exported for tests: the slot logic deadlocks the service if it is wrong
+    _acquireSlot: acquireSlot,
+    _releaseSlot: releaseSlot,
+    _inFlight: () => ({ active, waiting: waiting.length })
+};

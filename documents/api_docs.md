@@ -24,7 +24,13 @@ Replace with your actual deployment URL in production.
 
 ## Authentication
 
-All API endpoints (except `/health`) require authentication via API key.
+Authentication is applied as global middleware and covers every endpoint except `GET /health`, which skips authentication only — it remains rate limited.
+
+Auth is only enforced when a key source is configured. Resolution order:
+
+1. `API_KEYS_FILE` (default `/app/apikeys.txt`) — one key per line, `#` comments ignored, hot-reloaded every `API_KEYS_RELOAD_MS` (default 30s). Takes precedence when the file exists and holds at least one key.
+2. `API_KEY` env — single key.
+3. **Neither configured → authentication is disabled and every request is accepted.** The server logs a warning at boot. Always configure a key source before exposing the service.
 
 ### Methods
 
@@ -143,11 +149,12 @@ Authorization: Bearer your-api-key
 | `png` | boolean | `false` | `true`, `false` | If `true`, output PNG image; otherwise output PDF |
 | `format` | string | `"A4"` | `A4`, `A5`, `Letter`, `Legal` | Paper size (case-insensitive) |
 | `orientation` | string | `"portrait"` | `portrait`, `landscape` | Page orientation |
-| `margin` | string | `"10mm"` | e.g., `"10mm"`, `"1cm"`, `"0.5in"` | Page margins (supports mm, cm, in, px) |
+| `margin` | string | `"10mm"` | e.g., `"10mm"`, `"1cm"`, `"0.5in"` | Page margins. `mm`, `cm`, and `in` are understood; a bare number is treated as **mm**. Other CSS units (`px`, `pt`) are not parsed — the numeric part is read as mm. |
 | `single` | boolean | `false` | `true`, `false` | Force content to fit on single page (shrink-to-fit) |
 | `scale` | number\|null | `null` | `0.1` to `2.0` or `null` | Manual scale override. If `null`, scale is auto-calculated |
 | `dpi` | number | `96` | Any positive number | PNG resolution in DPI (affects PNG output only) |
 | `filename` | string\|null | `null` | Any valid filename | Suggested filename for download or save |
+| `waitUntil` | string | `"networkidle"` | `load`, `domcontentloaded`, `networkidle`, `commit` | When to consider the page ready. `networkidle` waits for 500ms of network silence — correct for HTML pulling remote images or fonts, but that half-second is pure latency for self-contained HTML. Use `load` there. Webfonts are always awaited via `document.fonts.ready` regardless of this setting. |
 
 #### Response (Stream Mode - save=false)
 
@@ -241,6 +248,26 @@ Common causes:
   "retry_after_seconds": 15
 }
 ```
+
+**503 Service Unavailable** - Render queue is full
+
+```json
+{
+  "error": "Render queue is full, retry shortly"
+}
+```
+
+Returned once more than `RENDER_QUEUE_MAX` (default 100) requests are already waiting for a render slot. Response carries `Retry-After: 5`. Back off and retry; this is a load signal, not a fault.
+
+**504 Gateway Timeout** - Render exceeded its deadline
+
+```json
+{
+  "error": "Render exceeded 60000ms"
+}
+```
+
+One render may run for at most `RENDER_TIMEOUT_MS` (default 60000). Usually means the HTML never finished loading — check for resources that never resolve, and consider `waitUntil: "load"`.
 
 **500 Internal Server Error** - Rendering failed
 
@@ -386,7 +413,7 @@ Health check endpoint for monitoring and load balancer health checks.
 
 **URL:** `GET /health`
 
-**Headers:** None required (no authentication needed)
+**Headers:** None required. `/health` is exempt from **authentication** so container healthchecks and load balancer probes can reach it without a key. It is still **rate limited** by source IP like any other request, so it cannot be polled for free.
 
 #### Response
 
@@ -656,7 +683,7 @@ const pdfBlob = await response.blob();
 
 **Issue: 401 Unauthorized**
 - **Cause**: Missing or invalid API key
-- **Solution**: Check that API key is correct and matches `apikeys.txt` or `API_KEY` env var
+- **Solution**: Check that API key is correct and matches `apikeys.txt` or `API_KEY` env var. If `apikeys.txt` exists and is non-empty it wins over `API_KEY`.
 
 **Issue: 429 Rate Limit Exceeded**
 - **Cause**: Too many requests in short time

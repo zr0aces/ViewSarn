@@ -14,11 +14,11 @@ Default elite Thai font from Google Fonts, standard for official Thai documents.
 - **Use Case**: Official documents, receipts, invoices, and general Thai content.
 - **CSS**: `font-family: 'Sarabun', sans-serif;`
 
-### 2. **Inter** (Modern Sans-Serif)
-A high-quality, open-source alternative to Google Sans / Product Sans. 
-- **Weights**: Multiple weights (Thin to Black)
+### 2. **Google Sans** (Modern Sans-Serif)
+Modern sans-serif used for English UI text and headings.
+- **Weights**: Regular, Bold, Italic, BoldItalic
 - **Use Case**: Modern UI text, English headings, and industrial-grade reports.
-- **CSS**: `font-family: 'Inter', sans-serif;`
+- **CSS**: `font-family: 'Google Sans', sans-serif;`
 
 ### 3. **Noto Sans Thai**
 Google's universal font for Thai, used as a reliable fallback.
@@ -36,7 +36,7 @@ For the best results, use the following font-stack recommendations in your HTML 
 Perfect for invoices and reports with mixed language content.
 ```css
 body {
-  font-family: 'Sarabun', 'Inter', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
+  font-family: 'Sarabun', 'Google Sans', 'Noto Sans Thai', system-ui, -apple-system, sans-serif;
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
 }
@@ -46,7 +46,7 @@ body {
 For a modern, "Google-esque" aesthetic.
 ```css
 h1, h2, .premium-title {
-  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Google Sans', 'Helvetica Neue', Arial, sans-serif;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -72,7 +72,7 @@ To verify that fonts are correctly loaded within your running container:
 docker exec <container_id> fc-list
 
 # Filter for specific families
-docker exec <container_id> fc-list | grep -iE "sarabun|inter|noto"
+docker exec <container_id> fc-list | grep -iE "sarabun|google sans|noto"
 ```
 
 ### Updating Fonts
@@ -81,7 +81,9 @@ If you need to add custom fonts, follow these steps:
 2. Update the `Dockerfile` to copy these files into `/usr/local/share/fonts/`.
 3. Rebuild the image: `docker compose build`.
 
+> Fonts are installed into the OS font cache by the **Dockerfile only** (`fc-cache`). A native `npm start` renders with whatever fonts the host has — verify font-sensitive output in Docker.
+
 ---
 
 ## ⚖️ License Information
-All pre-installed fonts are distributed under the **SIL Open Font License (OFL)**, making them safe for commercial use and distribution within the ViewSarn image.
+All pre-installed fonts are distributed under the **SIL Open Font License (OFL)** (see `fonts/*/OFL.txt`), making them safe for commercial use and distribution within the ViewSarn image.

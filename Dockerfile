@@ -47,17 +47,23 @@ RUN chmod -R a+r /usr/local/share/fonts/truetype \
   && chown -R www-data:www-data ${OUTPUT_DIR} ${PLAYWRIGHT_BROWSERS_PATH}
 
 # 5. Install Node Dependencies
+# --omit=dev: pino-pretty is a dev-only formatter; production logs stay raw JSON.
+ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then \
-    npm ci --no-audit --no-fund --unsafe-perm=true; \
+    npm ci --omit=dev --no-audit --no-fund --unsafe-perm=true; \
     else \
-    npm install --no-audit --no-fund --unsafe-perm=true; \
-    fi
+    npm install --omit=dev --no-audit --no-fund --unsafe-perm=true; \
+    fi \
+    && npm cache clean --force
 
 # 6. Install Playwright + System Deps (The Magic Step)
 # --with-deps: Installs the specific OS libraries Chromium needs
 # This replaces your long manual 'apt-get install' list
-RUN npx playwright install chromium --with-deps
+# chromium-headless-shell is what chromium.launch({headless:true}) actually runs;
+# it is a few hundred MB smaller than the full headed Chromium build.
+RUN npx playwright install chromium-headless-shell --with-deps \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
 
 # 7. Copy App Code
 COPY --chown=www-data:www-data server.js /app/server.js

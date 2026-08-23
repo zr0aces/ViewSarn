@@ -136,6 +136,7 @@ ViewSarn/
 │   ├── Google_Sans/
 │   └── Noto_Sans_Thai/
 ├── documents/             # Comprehensive technical documentation
+│   ├── specification.md   # Numbered requirements the service must meet
 │   ├── architecture.md    # System design & data flow
 │   ├── api_docs.md        # API reference & client examples
 │   ├── deployment.md      # Production & CI/CD strategies
@@ -179,7 +180,12 @@ Centralizes all configuration from environment variables.
 - `API_KEYS_RELOAD_MS` - Key reload interval
 - `RATE_LIMIT_MAX` - Max requests per window
 - `RATE_LIMIT_WINDOW_MS` - Rate limit window duration
+- `RENDER_CONCURRENCY` - Max simultaneous Chromium pages (default: `os.availableParallelism()`)
+- `RENDER_QUEUE_MAX` - Max requests waiting for a render slot before `503` (default: `100`)
+- `RENDER_TIMEOUT_MS` - Per-render deadline before `504` (default: `60000`)
+- `BODY_LIMIT` - Max request body size (default: `15mb`)
 - `LOG_LEVEL` - Pino log level
+- `IS_PRODUCTION` - Derived from `NODE_ENV`; selects raw JSON logging over `pino-pretty`
 
 #### `src/auth.js`
 Handles API key authentication with hot-reloading.
@@ -195,7 +201,7 @@ Handles API key authentication with hot-reloading.
 - Gracefully handles missing/invalid keys
 
 #### `src/rateLimit.js`
-In-memory rate limiting using sliding window algorithm.
+In-memory rate limiting using a fixed-window counter, held in a per-process `Map`. Counters are not shared between replicas. Stale entries are swept once the map passes 1024 keys, and at most once per rate-limit window so an IP spray cannot force an O(n) scan per request.
 
 **Key functions:**
 - `isRateLimitedFor(id)` - Checks and updates rate limit for given ID
@@ -288,17 +294,19 @@ git push origin feature/my-awesome-feature
 #### Add New Paper Size
 
 **Edit `src/render.js`:**
-```javascript
-// Add to PAPER_SIZES constant
-const PAPER_SIZES = new Set(['A4', 'A5', 'LETTER', 'LEGAL', 'TABLOID']);
+Sizes live in one map keyed by the uppercased `format`, so a new size is a single entry — `renderHtmlToBuffer` needs no change:
 
-// Add dimensions in renderHtmlToBuffer
-const paperMm = (paper === 'A5') ? { w: 148, h: 210 } :
-                (paper === 'LETTER') ? { w: 216, h: 279 } :
-                (paper === 'LEGAL') ? { w: 216, h: 356 } :
-                (paper === 'TABLOID') ? { w: 279, h: 432 } :  // New
-                { w: 210, h: 297 };
+```javascript
+const PAPER_SIZES = {
+    A4: { w: 210, h: 297 },
+    A5: { w: 148, h: 210 },
+    LETTER: { w: 216, h: 279 },
+    LEGAL: { w: 216, h: 356 },
+    TABLOID: { w: 279, h: 432 }   // New
+};
 ```
+
+The name is also passed straight to Playwright as `page.pdf({ format })`, so it must be a format Chromium recognises.
 
 #### Add New Environment Variable
 
@@ -444,14 +452,20 @@ ViewSarn includes lightweight automated coverage using Node.js's built-in test r
 
 **Run the test suite:**
 ```bash
-npm test
+npm test                       # node --test test/*.test.js
+node --test test/auth.test.js  # a single file
 ```
+
+All suites reload `src/config.js` through `loadFreshModules` in `test/helpers.js`, which clears `require.cache` for config, the logger, and the module under test — config reads every environment variable once at require time, so a module that captured a value must be reloaded alongside it. Use that helper for any new config-dependent test.
 
 Current automated coverage focuses on:
 
-- API key validation behavior
-- Rate limiting behavior
+- API key validation behavior (`test/auth.test.js`)
+- Rate limiting: window accounting, counter eviction, `RATE_LIMIT_MAX=0` (`test/rateLimit.test.js`)
+- Render slot accounting: the concurrency cap, slot release on failure, and queue-full rejection (`test/concurrency.test.js`)
 - Fast feedback without requiring a browser launch
+
+The suite deliberately stops at the browser boundary. Anything needing a real render — PDF/PNG output, font embedding, the `504` deadline — is verified by running the container; see `documents/specification.md` for which requirements are test-covered (✅) versus manually verified (☑️).
 
 ---
 
@@ -464,6 +478,8 @@ Current automated coverage focuses on:
 - **Quotes**: Single quotes for strings
 - **Naming**: camelCase for variables/functions, UPPER_CASE for constants
 - **Async/Await**: Preferred over callbacks
+- **Modules**: CommonJS (`require` / `module.exports`) throughout
+- **Note**: `server.js` and `test/` use 2-space indentation; the 4-space rule applies to `src/`
 
 **Example:**
 ```javascript

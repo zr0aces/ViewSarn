@@ -1,5 +1,4 @@
 const fs = require('fs').promises;
-const fssync = require('fs');
 const { API_KEYS_FILE, API_KEY_ENV, API_KEYS_RELOAD_MS } = require('./config');
 const logger = require('./logger');
 
@@ -8,27 +7,27 @@ let apiKeysFileExists = false;
 
 async function loadApiKeysFromFile() {
     try {
-        if (!fssync.existsSync(API_KEYS_FILE)) {
+        // Read directly rather than existsSync-then-read: one syscall instead of
+        // two, and no window where the file disappears between the two calls.
+        const txt = await fs.readFile(API_KEYS_FILE, 'utf8');
+        const s = new Set();
+        for (const raw of txt.split(/\r?\n/)) {
+            const line = raw.trim();
+            if (!line || line.startsWith('#')) continue;
+            s.add(line);
+        }
+        apiKeySet = s;
+        apiKeysFileExists = true;
+        logger.debug({ count: s.size }, 'Loaded API keys from file');
+    } catch (e) {
+        if (e.code === 'ENOENT') {
             apiKeySet = new Set();
             apiKeysFileExists = false;
             return;
         }
-        apiKeysFileExists = true;
-        const txt = await fs.readFile(API_KEYS_FILE, 'utf8');
-        const lines = txt.split(/\r?\n/);
-        const s = new Set();
-        for (let raw of lines) {
-            const line = raw.trim();
-            if (!line) continue;
-            if (line.startsWith('#')) continue;
-            s.add(line);
-        }
-        apiKeySet = s;
-        logger.debug({ count: apiKeySet.size }, 'Loaded API keys from file');
-    } catch (e) {
-        logger.error({ err: e, file: API_KEYS_FILE }, 'Error loading API keys file');
-        apiKeySet = new Set();
-        apiKeysFileExists = false;
+        // A transient read error (EACCES, EBUSY on a remount) must not silently
+        // drop every key and fall back to unauthenticated mode. Keep what we had.
+        logger.error({ err: e, file: API_KEYS_FILE }, 'Error reloading API keys file; keeping previously loaded keys');
     }
 }
 

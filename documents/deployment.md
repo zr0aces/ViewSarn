@@ -489,6 +489,14 @@ spec:
           value: "200"
         - name: RATE_LIMIT_WINDOW_MS
           value: "60000"
+        # Pin this against the pod memory limit below rather than letting it
+        # default to the node's CPU count, which ignores the cgroup limit.
+        - name: RENDER_CONCURRENCY
+          value: "4"
+        - name: RENDER_QUEUE_MAX
+          value: "100"
+        - name: RENDER_TIMEOUT_MS
+          value: "60000"
         - name: LOG_LEVEL
           value: info
         - name: API_KEY
@@ -730,6 +738,21 @@ cap_add:
   - NET_BIND_SERVICE
 ```
 
+### 3b. Capping Memory with RENDER_CONCURRENCY
+
+Each in-flight render holds a Chromium page, and page memory is what drives peak RSS. `RENDER_CONCURRENCY` (default `os.availableParallelism()`) caps how many run at once; requests beyond the cap wait for a slot instead of opening more pages.
+
+Queued requests still hold their parsed bodies, so the queue is bounded too: past `RENDER_QUEUE_MAX` (default 100) the service returns `503` with `Retry-After: 5`. Together the two ceilings bound peak memory at roughly (`RENDER_CONCURRENCY` × page) + (`RENDER_QUEUE_MAX` × `BODY_LIMIT`) — size `BODY_LIMIT` down if the default 15mb × 100 exceeds your container limit.
+
+Each render also carries a `RENDER_TIMEOUT_MS` deadline (default 60s, returning `504`), so a wedged page releases its slot instead of holding it until restart.
+
+Size it against the container memory limit — roughly 100-150MB of headroom per concurrent render on top of the ~130MB baseline — and set it explicitly in production rather than inheriting the host's CPU count:
+
+```yaml
+environment:
+  - RENDER_CONCURRENCY=4
+```
+
 ### 4. Rate Limiting Best Practices
 
 ```javascript
@@ -807,7 +830,16 @@ docker compose up --scale viewsarn=3
 - Load balancer removes instances
 - Container marked unhealthy
 
-**Solutions:**
+**Check this first:** **`curl` is not installed in the image.** The Dockerfile builds on `node:24-bookworm-slim` and installs only `fontconfig` plus Playwright's own dependencies, so a `CMD curl ...` healthcheck fails with "executable not found". Probe with Node instead — this is what `docker-compose.yml` ships:
+
+```yaml
+healthcheck:
+  test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+```
+
+`/health` itself needs no API key — it is exempt from the auth middleware — so Kubernetes `httpGet` probes and load balancer checks work unmodified.
+
+**Other solutions:**
 ```yaml
 # Increase timeout and start period
 healthcheck:

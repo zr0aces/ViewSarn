@@ -1,10 +1,9 @@
 // server.js - Playwright render API with API-key file + per-key rate limiting
 const express = require('express');
-const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs').promises;
 
-const { PORT, OUTPUT_DIR, RATE_LIMIT_MAX } = require('./src/config');
+const { PORT, OUTPUT_DIR, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, API_KEY_ENV, API_KEYS_FILE } = require('./src/config');
 const logger = require('./src/logger');
 const { validateAuth, isAuthFileInUse } = require('./src/auth');
 const { isRateLimitedFor } = require('./src/rateLimit');
@@ -22,11 +21,17 @@ async function ensureDir(dir) {
   await initBrowser();
 
   const app = express();
-  app.use(bodyParser.json({ limit: '15mb' }));
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: BODY_LIMIT }));
 
   // auth & rate-limit middleware
   app.use((req, res, next) => {
-    const { valid, authRequired, provided } = validateAuth(req);
+    // /health skips authentication only: container healthchecks and load
+    // balancer probes cannot present a key. It stays rate limited, so an
+    // unauthenticated caller cannot poll it for free.
+    const isHealth = req.path === '/health';
+
+    const { valid, provided } = isHealth ? { valid: true, provided: null } : validateAuth(req);
 
     if (!valid) {
       res.set('WWW-Authenticate', 'Bearer realm="PlaywrightRender"');
@@ -108,10 +113,18 @@ async function ensureDir(dir) {
       res.setHeader('Content-Type', options.png ? 'image/png' : 'application/pdf');
       res.setHeader('Content-Length', buffer.length);
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      return res.send(Buffer.from(buffer));
+      // buffer is already a Buffer; Buffer.from would copy every rendered byte.
+      return res.send(buffer);
     } catch (err) {
-      logger.error({ err }, 'Error in /convert');
-      return res.status(500).json({ error: (err && err.message) ? err.message : String(err) });
+      // 503 (queue full) and 504 (render deadline) are load signals, not faults:
+      // log them at warn and let the client back off rather than retry blindly.
+      const status = err && err.status ? err.status : 500;
+      // Not `msg`: pino uses that key for the message itself, so passing it here
+      // emits a duplicate key and the reason wins over the label.
+      if (status === 500) logger.error({ err }, 'Error in /convert');
+      else logger.warn({ status, reason: err.message }, 'Render not completed');
+      if (status === 503) res.setHeader('Retry-After', '5');
+      return res.status(status).json({ error: (err && err.message) ? err.message : String(err) });
     }
   });
 
@@ -119,16 +132,16 @@ async function ensureDir(dir) {
     ok: true,
     pid: process.pid,
     apiAuthFileInUse: isAuthFileInUse(),
-    rate_limit_window_ms: require('./src/config').RATE_LIMIT_WINDOW_MS,
+    rate_limit_window_ms: RATE_LIMIT_WINDOW_MS,
     rate_limit_max: RATE_LIMIT_MAX
   }));
 
   const server = app.listen(PORT, () => {
     logger.info({ port: PORT, outputDir: OUTPUT_DIR }, 'Playwright render API listening');
-    if (!require('./src/config').API_KEY_ENV && !isAuthFileInUse()) {
+    if (!API_KEY_ENV && !isAuthFileInUse()) {
       logger.warn('WARNING: No API key configured — authentication is DISABLED. Set API_KEY env or mount API_KEYS_FILE.');
     } else if (isAuthFileInUse()) {
-      logger.info({ file: require('./src/config').API_KEYS_FILE }, 'API keys file in use');
+      logger.info({ file: API_KEYS_FILE }, 'API keys file in use');
     }
   });
 
