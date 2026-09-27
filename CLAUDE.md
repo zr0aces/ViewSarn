@@ -65,3 +65,11 @@ CommonJS (`require`/`module.exports`) everywhere, `scripts/` included — no ESM
 `documents/specification.md` is the exception to "the code is the source of truth": it states what the service **must** do, as numbered `R-*` requirements with a change log explaining why each exists. Read it before changing request handling, auth, rate limiting, or the render limits — and if a change contradicts a requirement, update the requirement in the same commit rather than leaving the two disagreeing. It is also the Spec axis for `/code-review`, which previously had no spec to check against.
 
 The rest of `documents/` (architecture, api_docs, deployment, development, fonts) explains how the service works and how to run it. That prose is hand-maintained and can drift; where it disagrees with the code, the code wins.
+
+## Plans
+
+When creating a plan file under `docs/plans/`, the filename must include the creation date using the format `YYYY-MM-dd-plan-name.md`.
+Use the actual date when the plan is created.
+Use a clear, descriptive name for `plan-name`.
+
+Example: `2026-09-12-document-figures-alignment.md`
