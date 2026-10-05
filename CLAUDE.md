@@ -60,10 +60,6 @@ Application code and `.js` entries remain CommonJS (`require`/`module.exports`).
 
 Root VERSION is authoritative. Default release prepares only (bump, metadata sync, check); `--tag` opts into an exact-path commit and annotated local tag. Build is unsupported; nothing pushes. Run `npm run release -- --help` for examples; to tag an already-prepared version, use printed Git commands instead of rerunning release. `npm run version:check` is read-only; `node --test scripts/version-control.test.mjs` tests the shared tooling.
 
-## Release Tooling
-
-Root VERSION is authoritative. Default release prepares only (bump, metadata sync, check); `--tag` opts into an exact-path commit and annotated local tag. Build is unsupported; nothing pushes. Run `npm run release -- --help` for examples; to tag an already-prepared version, use printed Git commands instead of rerunning release. `npm run version:check` is read-only; `node --test scripts/version-control.test.mjs` tests the shared tooling.
-
 ## CI
 
 `.github/workflows/ci.yml` runs `npm test` and `npm run version:check` on every push and pull request. `.github/workflows/docker-publish.yml` builds and pushes to GHCR **only on tags `v*` and published releases**.
