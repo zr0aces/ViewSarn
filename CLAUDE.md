@@ -54,7 +54,15 @@ Logging is Pino (`src/logger.js`), driven by `LOG_LEVEL`. `pino-pretty` is a **d
 
 ## Conventions
 
-CommonJS (`require`/`module.exports`) everywhere, `scripts/` included — no ESM, no `.mjs`. 4-space indent in `src/`; 2-space in `server.js`, `test/`, and `scripts/`. No linter, no build step, no framework in tests — plain `node:test` + `node:assert/strict`.
+Application code and `.js` entries remain CommonJS (`require`/`module.exports`). Release/sync wrappers dynamically import repository-local `.mjs` CalVer core/inventory; this is the scoped release-tooling exception. 4-space indent in `src/`; 2-space in `server.js`, `test/`, and `scripts/`. No linter, no build step, no framework in tests — plain `node:test` + `node:assert/strict`.
+
+## Release Tooling
+
+Root VERSION is authoritative. Default release prepares only (bump, metadata sync, check); `--tag` opts into an exact-path commit and annotated local tag. Build is unsupported; nothing pushes. Run `npm run release -- --help` for examples; to tag an already-prepared version, use printed Git commands instead of rerunning release. `npm run version:check` is read-only; `node --test scripts/version-control.test.mjs` tests the shared tooling.
+
+## Release Tooling
+
+Root VERSION is authoritative. Default release prepares only (bump, metadata sync, check); `--tag` opts into an exact-path commit and annotated local tag. Build is unsupported; nothing pushes. Run `npm run release -- --help` for examples; to tag an already-prepared version, use printed Git commands instead of rerunning release. `npm run version:check` is read-only; `node --test scripts/version-control.test.mjs` tests the shared tooling.
 
 ## CI
 

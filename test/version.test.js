@@ -1,59 +1,73 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { spawnSync } = require('node:child_process');
+const root = path.resolve(__dirname, '..');
 
-// Import the real definitions rather than restating them: a test that carries
-// its own copy of the regex passes happily while the scripts drift away.
-const { CALVER_REGEX, VERSION_FILE, parseCalver, compareCalver } = require('../scripts/calver');
-const { run } = require('../scripts/sync-version');
-const { parseArgs, nextVersion } = require('../scripts/release');
+const files = ['VERSION', 'package.json', 'package-lock.json', 'README.md', 'documents/deployment.md'];
+function fixture(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'viewsarn wrappers '));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const name of [...files, ...['release.js', 'sync-version.js', 'version-control.mjs', 'version-targets.mjs'].map((name) => `scripts/${name}`)]) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    fs.copyFileSync(path.join(root, name), path.join(dir, name));
+  }
+  return dir;
+}
+function run(dir, name, ...args) {
+  return spawnSync(process.execPath, [path.join(dir, 'scripts', name), ...args], { cwd: os.tmpdir(), encoding: 'utf8' });
+}
+function bytes(dir) { return files.map((name) => fs.readFileSync(path.join(dir, name))); }
 
-test('VERSION file exists and contains valid CalVer string', () => {
-  assert.ok(fs.existsSync(VERSION_FILE), 'VERSION file must exist at repo root');
-  const version = fs.readFileSync(VERSION_FILE, 'utf8').trim();
-  assert.match(version, CALVER_REGEX, 'VERSION must match CalVer format YYYY.M.MINOR');
+test('actual CommonJS check and help are read-only from an unrelated CWD', (t) => {
+  const dir = fixture(t), before = bytes(dir);
+  assert.equal(run(dir, 'sync-version.js', '--check').status, 0);
+  const help = run(dir, 'release.js', '--help');
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /node scripts\/release\.js --tag/);
+  assert.match(help.stdout, /Each release invocation prepares a NEW version/);
+  assert.deepEqual(bytes(dir), before);
 });
 
-test('CalVer regex rejects invalid month formats with leading zeroes and invalid months', () => {
-  assert.ok(!CALVER_REGEX.test('2026.08.1'), 'Must reject leading zero in month');
-  assert.ok(!CALVER_REGEX.test('2026.0.1'), 'Must reject month 0');
-  assert.ok(!CALVER_REGEX.test('2026.13.1'), 'Must reject month 13');
-  assert.ok(!CALVER_REGEX.test('1.0.0'), 'Must reject semver format');
-  assert.ok(CALVER_REGEX.test('2026.8.1'), 'Must accept valid CalVer 2026.8.1');
-  assert.ok(CALVER_REGEX.test('2026.12.10'), 'Must accept valid CalVer 2026.12.10');
+test('CommonJS wrappers reject missing operand and force without mutation', (t) => {
+  const dir = fixture(t), before = bytes(dir);
+  for (const args of [['--version'], ['--version='], ['--force'], ['--build']]) assert.notEqual(run(dir, 'release.js', ...args).status, 0);
+  assert.deepEqual(bytes(dir), before);
 });
 
-test('every target file matches VERSION', () => {
-  const { hasDivergence, results } = run({ write: false });
-  const diverged = results.filter(r => r.status !== 'synced');
-  assert.equal(hasDivergence, false, `out of sync: ${JSON.stringify(diverged)}`);
+test('each of six deployment anchors must match before any write', (t) => {
+  const dir = fixture(t), file = path.join(dir, 'documents/deployment.md');
+  const original = fs.readFileSync(file, 'utf8');
+  for (const anchor of ['Pull the latest image:', 'Pull a specific version:', 'Specific version (', 'Year.month tag (', 'Year tag (', '(e.g., `v']) {
+    assert.ok(original.includes(anchor));
+    fs.writeFileSync(file, original.replace(anchor, 'REWORDED'));
+    const before = bytes(dir);
+    for (const name of ['sync-version.js', 'release.js']) {
+      const result = run(dir, name);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /anchor-missing/);
+      assert.deepEqual(bytes(dir), before);
+    }
+    assert.notEqual(run(dir, 'sync-version.js', '--check').status, 0);
+    assert.deepEqual(bytes(dir), before);
+  }
 });
 
-test('the release minor resets when the month or year changes', () => {
-  const august = new Date(2026, 7, 15); // month is 0-indexed
-  assert.deepEqual(nextVersion({ year: 2026, month: 8, minor: 2 }, august), { year: 2026, month: 8, minor: 3 });
-  assert.deepEqual(nextVersion({ year: 2026, month: 7, minor: 5 }, august), { year: 2026, month: 8, minor: 1 });
-  assert.deepEqual(nextVersion({ year: 2025, month: 12, minor: 9 }, august), { year: 2026, month: 8, minor: 1 });
-  assert.deepEqual(nextVersion(null, august), { year: 2026, month: 8, minor: 1 }, 'a first release starts at .1');
-});
-
-test('--version requires an operand instead of silently auto-bumping', () => {
-  assert.throws(() => parseArgs(['--version']), /requires a version operand/);
-  assert.throws(() => parseArgs(['-v']), /requires a version operand/);
-  assert.throws(() => parseArgs(['--version=']), /requires a value/);
-  assert.throws(() => parseArgs(['--version', '--force']), /requires a version operand/);
-  assert.throws(() => parseArgs(['--nonsense']), /Unknown argument/);
-
-  assert.deepEqual(parseArgs(['--version', '2026.8.5']), { customVersion: '2026.8.5', force: false });
-  assert.deepEqual(parseArgs(['--version=2026.8.5']), { customVersion: '2026.8.5', force: false });
-  assert.deepEqual(parseArgs(['--force']), { customVersion: null, force: true });
-});
-
-test('CalVer ordering detects a version that would move backwards', () => {
-  const current = parseCalver('2026.8.2');
-  assert.ok(compareCalver(parseCalver('2026.8.3'), current) > 0, 'a later minor is newer');
-  assert.ok(compareCalver(parseCalver('2026.9.1'), current) > 0, 'a later month is newer');
-  assert.ok(compareCalver(parseCalver('2026.8.1'), current) < 0, 'an earlier minor is older');
-  assert.ok(compareCalver(parseCalver('2025.12.9'), current) < 0, 'an earlier year is older');
-  assert.equal(compareCalver(parseCalver('2026.8.2'), current), 0, 'the same version is not newer');
+test('README insertion and deployment latest literal share check/sync rules', (t) => {
+  const dir = fixture(t), readme = path.join(dir, 'README.md'), deployment = path.join(dir, 'documents/deployment.md');
+  fs.writeFileSync(readme, fs.readFileSync(readme, 'utf8').replace(/\*\*Version:\*\* `[^`]+` \(CalVer\)\n/, ''));
+  fs.writeFileSync(deployment, fs.readFileSync(deployment, 'utf8').replace('viewsarn:latest', 'viewsarn:old'));
+  const before = bytes(dir);
+  assert.notEqual(run(dir, 'sync-version.js', '--check').status, 0);
+  assert.deepEqual(bytes(dir), before);
+  const result = run(dir, 'sync-version.js');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(fs.readFileSync(readme, 'utf8'), /\*\*The Elite HTML-to-PDF\/PNG Conversion Engine\*\*\n\n\*\*Version:\*\*/);
+  assert.match(fs.readFileSync(deployment, 'utf8'), /viewsarn:latest/);
+  const synced = bytes(dir);
+  assert.equal(run(dir, 'sync-version.js', '--check').status, 0);
+  assert.equal(run(dir, 'sync-version.js').status, 0);
+  assert.deepEqual(bytes(dir), synced);
 });

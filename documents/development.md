@@ -487,7 +487,7 @@ The suite deliberately stops at the browser boundary. Anything needing a real re
 - **Quotes**: Single quotes for strings
 - **Naming**: camelCase for variables/functions, UPPER_CASE for constants
 - **Async/Await**: Preferred over callbacks
-- **Modules**: CommonJS (`require` / `module.exports`) throughout — including `scripts/`. No ESM, no `.mjs`; release tooling is plain CJS so tests can `require` it directly.
+- **Modules**: Application code and `.js` CLI wrappers are CommonJS (`require` / `module.exports`). Release tooling alone dynamically imports the repository-local `.mjs` core/inventory.
 - **Note**: `server.js`, `test/`, and `scripts/` use 2-space indentation; the 4-space rule applies to `src/`
 
 **Example:**
@@ -661,37 +661,23 @@ The `VERSION` file at the repository root contains the active version string. Al
 
 | Command | Description |
 |---------|-------------|
-| `npm run release` | Calculates the next CalVer from the system date and syncs all files |
-| `npm run release -- --version 2026.8.5` | Releases that exact version. The operand is required — the flag never falls through to an automatic bump |
-| `npm run release -- --force` | Allows a version that is not newer than the current `VERSION` |
-| `npm run version:sync` | Propagates `VERSION` to all target files |
-| `npm run version:check` | Verifies all target files match `VERSION`. Runs in CI (`.github/workflows/ci.yml`) on every push and pull request |
+| `npm run release` | Prepare only: monotonic GMT+7 bump, metadata sync, independent check |
+| `npm run release -- --version YYYY.M.N` | Explicit newer version, no later than current GMT+7 month |
+| `npm run release -- --tag` | Prepare a new version, exact-path commit, annotated local tag |
+| `npm run release -- --help` | Runnable examples and safety notes |
+| `npm run version:sync` | Metadata-only sync, no build/install/Git |
+| `npm run version:check` | Read-only CI consistency gate |
 
-`release` refuses a version that is not newer than the current one, so a pre-dated `VERSION` or a skewed clock cannot silently publish backwards; `--force` overrides.
+Root VERSION must exist and be valid. No downgrade/force or build support; nothing pushes. Future prefixes increment their existing counter rather than regressing. Check and sync apply identical rules, including the literal `latest` pull tag and all six deployment anchors.
 
-`check` and `sync` run the same rules, and a file counts as in sync exactly when applying them changes nothing. A rule that `sync` writes but `check` fails to assert therefore cannot exist — including non-version text like the `:latest` pull tag, which `sync` pins and `check` now verifies.
-
-Scripts live in `scripts/` and are CommonJS: `calver.js` holds the one definition of the CalVer format, and `release.js` calls `sync-version.js` in-process rather than spawning it.
+`scripts/release.js` and `scripts/sync-version.js` remain CommonJS wrappers. They dynamically import `version-control.mjs` (strict parsing, transactions and orchestration) and `version-targets.mjs` (owned metadata slots). Npm names and workflows are unchanged.
 
 ### Release Steps
 
-1. Run the release bump script:
-   ```bash
-   npm run release
-   ```
-2. Review the modified files and run test suite:
-   ```bash
-   npm test
-   npm run version:check
-   ```
-3. Commit and tag:
-   ```bash
-   git add VERSION package.json README.md documents/deployment.md
-   git commit -m "chore: release vYYYY.M.MINOR"
-   git tag -a "vYYYY.M.MINOR" -m "Release vYYYY.M.MINOR"
-   git push origin main --tags
-   ```
-4. Pushing the `v*` tag triggers GitHub Actions to automatically build and push the multi-arch Docker image to GHCR.
+1. Run `npm run release`, review changes, then run `npm test`, `npm run version:check`, and `node --test scripts/version-control.test.mjs`.
+2. Use the printed exact staging, commit, annotated-tag, and separate branch/tag push commands. Check the remote for the exact tag before publishing; do not assume a branch name or push all tags.
+3. To tag an already-prepared version, use those Git commands instead of rerunning release (which prepares another version).
+4. Pushing the specific `v*` tag triggers the existing GHCR publishing workflow.
 
 ---
 
