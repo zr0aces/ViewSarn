@@ -29,7 +29,9 @@ test('validateAuth accepts the configured bearer token', () => {
 
   assert.equal(result.valid, true);
   assert.equal(result.authRequired, true);
-  assert.equal(result.provided, 'sample-key');
+  assert.match(result.principal.id, /^k:[0-9a-f]{64}$/);
+  assert.equal(result.principal.label, result.principal.id.slice(2, 14));
+  assert.ok(!JSON.stringify(result).includes('sample-key'), 'the raw key must not be returned');
 });
 
 test('validateAuth rejects an invalid bearer token when API key auth is enabled', () => {
@@ -43,7 +45,7 @@ test('validateAuth rejects an invalid bearer token when API key auth is enabled'
 
   assert.equal(result.valid, false);
   assert.equal(result.authRequired, true);
-  assert.equal(result.provided, 'invalid-key');
+  assert.equal(result.principal, null);
 });
 
 test('validateAuth accepts a key from the keys file and rejects one that is not in it', () => {

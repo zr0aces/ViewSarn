@@ -39,7 +39,8 @@ function makeDeps(over = {}) {
         const provided = header && header.toLowerCase().startsWith('bearer ')
           ? header.slice(7).trim()
           : (req.get('x-api-key') || null);
-        return { valid: provided === 'k1', authRequired: true, provided };
+        const valid = provided === 'k1';
+        return { valid, authRequired: true, principal: valid ? { id: 'k:digest-of-k', label: 'abc123def456' } : null };
       },
       isAuthFileInUse: () => false,
       ...over.auth

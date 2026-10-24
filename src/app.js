@@ -67,7 +67,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
         // unauthenticated caller cannot poll it for free.
         const isHealth = req.path === '/health' || req.path === '/metrics';
 
-        const { valid, provided } = isHealth ? { valid: true, provided: null } : auth.validateAuth(req);
+        const { valid, principal } = isHealth ? { valid: true, principal: null } : auth.validateAuth(req);
 
         metrics.requests += 1;
 
@@ -77,11 +77,11 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             return res.status(401).json({ error: 'Unauthorized', request_id: req.requestId });
         }
 
-        // choose id for rate-limiting
-        const id = provided || (req.ip || req.connection.remoteAddress || 'unknown');
+        // A keyed caller is limited and logged by its principal; everyone else by IP.
+        req.principal = principal || { id: req.ip || req.connection.remoteAddress || 'unknown', label: 'anon' };
 
         // apply rate limit
-        const rl = limiter.isRateLimitedFor(id);
+        const rl = limiter.isRateLimitedFor(req.principal.id);
         // set rate-limit headers
         res.setHeader('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
         res.setHeader('X-RateLimit-Remaining', String(rl.remaining));
@@ -93,8 +93,6 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             return res.status(429).json({ error: 'Rate limit exceeded', retry_after_seconds: Math.ceil(rl.resetMs / 1000), request_id: req.requestId });
         }
 
-        // attach key id for downstream logging
-        req.authId = id;
         next();
     });
 
@@ -145,7 +143,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             metrics.renders += 1;
             logger.info({
                 requestId: req.requestId,
-                auth: req.authId ? req.authId : 'anon',
+                auth: req.principal.label,
                 size: buffer.length,
                 mode: options.png ? 'png' : 'pdf',
                 duration: `${duration}ms`

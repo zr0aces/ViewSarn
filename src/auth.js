@@ -11,6 +11,14 @@ const logger = require('./logger');
 const digest = (value) => crypto.createHash('sha256').update(String(value), 'utf8').digest();
 const digestHex = (value) => digest(value).toString('hex');
 
+// What the rest of the service may know about a caller. `id` (the full digest)
+// keys the rate limiter, so two keys can never share a bucket. `label` is a short
+// prefix for logs and directory names. The raw key never leaves this module.
+const principalFor = (key) => {
+    const hex = digestHex(key);
+    return { id: `k:${hex}`, label: hex.slice(0, 12) };
+};
+
 function timingSafeEqualBuffers(a, b) {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
@@ -89,7 +97,7 @@ function validateAuth(req) {
         valid = true; // no auth configured
     }
 
-    return { valid, authRequired, provided };
+    return { valid, authRequired, principal: valid && authRequired ? principalFor(provided) : null };
 }
 
 module.exports = {

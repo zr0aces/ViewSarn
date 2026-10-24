@@ -129,11 +129,12 @@ test('/metrics is 404 when disabled', async () => {
 
 // Known defects from the 2026-10-24 audit. Each asserts the desired behavior and is
 // marked todo until the fixing plan lands.
-test('F-01: the API key never reaches the logs', { todo: 'F-01 plan 02' }, async () => {
+test('F-01: the API key never reaches the logs', async () => {
   const s = await boot();
   try {
     await post(s.url, html);
     assert.doesNotMatch(JSON.stringify(s.logs), /k1/);
+    assert.ok(s.logs.some(l => l.auth === 'abc123def456'), 'the key label is logged instead');
   } finally { await s.close(); }
 });
 
