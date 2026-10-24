@@ -15,6 +15,7 @@
     "release": "node scripts/release.js",
     "version:sync": "node scripts/sync-version.js",
     "version:check": "node scripts/sync-version.js --check",
+    "apikey:generate": "node scripts/generate-apikey.js",
     "test:browser": "RUN_BROWSER_TESTS=1 node --test test/browser/*.test.js"
   },
   "dependencies": {

@@ -17,6 +17,7 @@ node --test --test-name-pattern='rate' test/rateLimit.test.js  # single test
 npm run release                    # bump CalVer version (YYYY.M.MINOR) and sync files
 npm run version:sync               # sync version from VERSION file to target files
 npm run version:check              # check that all files match VERSION file (CI gate)
+npm run apikey:generate            # generate API key (or node scripts/generate-apikey.js --help)
 
 docker compose up --build          # full stack with fonts (see caveat below)
 node test-convert.js               # manual smoke test against a RUNNING server on :3000
