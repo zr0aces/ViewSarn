@@ -147,3 +147,8 @@ Spec: new requirements for health-503, size ceilings, queue wait, per-key cap; u
 - Relaunch while requests are in flight: those fail with 503; check their slots release (step 2 test).
 - Limits that are too low reject legitimate pages; all are env-tunable.
 - Revert per commit.
+
+## EXECUTE notes (2026-10-24)
+
+- Step 1 measured in the image (headless shell, 2 GB, 1 CPU, `RENDER_CONCURRENCY=1`), 780 px wide `single` PNG at dpi 96: peak cgroup memory 243 MB at 3M device pixels, 432 MB at 15M, 1005 MB at 39M, 1854 MB at 78M, over a 142 MB idle browser. That is about 22 bytes per pixel. The default `MAX_PNG_PIXELS` moved from the 40M estimate to 25M so two concurrent renders fit the 2 GB compose limit. `MAX_PDF_PAGES` (200) is still unmeasured. dpi 300 and 600 were not run separately: the device-pixel count already folds dpi in.
+- Killing Chromium in a running container was not exercised; recovery is covered by the stub-browser tests (`test/browserLifecycle.test.js`).

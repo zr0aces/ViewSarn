@@ -61,10 +61,11 @@ services:
       # A queued request that waits longer than this gets 503.
       - RENDER_QUEUE_WAIT_MS=30000
 
-      # Output ceilings; a larger render is refused with 413. The defaults are
-      # estimates from the memory budget below. Measure peak RSS in the image
-      # before relying on them.
-      - MAX_PNG_PIXELS=40000000
+      # Output ceilings; a larger render is refused with 413. A full-page PNG
+      # costs about 22 bytes per device pixel (measured), so 25M pixels is about
+      # 550 MB; RENDER_CONCURRENCY x that plus ~150 MB idle must fit the memory
+      # limit below. MAX_PDF_PAGES is unmeasured.
+      - MAX_PNG_PIXELS=25000000
       - MAX_PDF_PAGES=200
 
       # Renders one key may have running or queued at once (0 = no cap). Set on

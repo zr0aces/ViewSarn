@@ -48,7 +48,7 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-1.19** | A `500` body reports a generic message. Chromium and filesystem detail goes to the log under the request id, never to the caller. |
 | ☑️ **R-1.20** | A caller that disconnects while queued is dropped from the queue rather than rendered for, and no response is written to the closed socket. A caller that disconnects while its render is running has the render abandoned, its context closed, and its slot released. |
 | ☑️ **R-1.21** | A request that waits more than `RENDER_QUEUE_WAIT_MS` (default 30000) for a render slot is removed from the queue and answered `503`. |
-| ☑️ **R-1.22** | A render whose output would exceed `MAX_PNG_PIXELS` (default 40,000,000 device pixels; full-page PNGs count the whole document) or `MAX_PDF_PAGES` (default 200) is refused with `413` before the screenshot or PDF is produced. `dpi` is never lowered silently. |
+| ☑️ **R-1.22** | A render whose output would exceed `MAX_PNG_PIXELS` (default 25,000,000 device pixels; full-page PNGs count the whole document) or `MAX_PDF_PAGES` (default 200) is refused with `413` before the screenshot or PDF is produced. `dpi` is never lowered silently. |
 | ☑️ **R-1.23** | When `MAX_INFLIGHT_PER_KEY` is above 0, a caller with that many renders running or queued gets `429` with `Retry-After`. The default 0 means no cap. |
 | ☑️ **R-1.24** | A browser that disconnects is replaced on the next render, concurrent callers share one launch, and a failed launch answers `503`. Shutdown stops new launches. A hung `context.close()` is abandoned after 5 s so it cannot pin a slot. |
 
@@ -176,6 +176,7 @@ Requirements added or changed after the initial specification, with the reason. 
 | R-1.28 | Added | Caller HTML could fetch cloud metadata and internal services and render the response into the output (audit F-05). Verified in the image: a page fetching a local server produced 0 hits with the filter and 2 with the destination allowed. |
 | R-1.27 | Added | An unknown route returned an HTML 404 and every body-parser error was labelled "Malformed JSON body" (audit F-14). |
 | R-1.4, R-1.5, R-1.25, R-1.26 | Changed | `save` let every key overwrite any file, accepted traversal by silent rewrite, returned the absolute server path and 500ed on a non-string `outPath`; a Thai `filename` 500ed after a full render (audit F-08, F-10, F-12). |
+| R-1.22 | Measured | In the image, peak container memory was 243 MB at 3M device pixels, 432 MB at 15M, 1005 MB at 39M and 1854 MB at 78M (about 22 bytes per pixel over a 142 MB idle browser), so the default is 25M, which keeps two concurrent renders inside the 2 GB compose limit. |
 | R-1.20 to R-1.24 | Added | A dead Chromium was never replaced and `/health` stayed green; output size was unbounded; one key could hold every slot; queued requests waited with no bound (audit F-02, F-03, F-07, F-13). |
 | R-5.7 | Changed | `/metrics` requires a key when auth is configured. |
 | R-2.5 | Changed | The first empty or missing read keeps the previous keys; a second consecutive one clears them, so revoking the last key works. |

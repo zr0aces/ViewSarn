@@ -57,10 +57,11 @@ module.exports = {
     // A queued request that waits longer than this gets a 503 instead of waiting
     // for a slot until a proxy has long since dropped the connection.
     RENDER_QUEUE_WAIT_MS: num(process.env.RENDER_QUEUE_WAIT_MS, 30_000),
-    // Ceilings on what one render may allocate. Defaults are estimates from the
-    // compose memory budget (about 150 MB per render, 4 bytes per device pixel);
-    // measure peak RSS in the image before relying on them.
-    MAX_PNG_PIXELS: num(process.env.MAX_PNG_PIXELS, 40_000_000),
+    // Ceilings on what one render may allocate. Measured in the image (headless
+    // shell, 1 CPU): a full-page PNG costs about 22 bytes per device pixel on top of
+    // roughly 150 MB for the idle browser, so 25M pixels is about 550 MB. Keep
+    // RENDER_CONCURRENCY x this under the container memory limit.
+    MAX_PNG_PIXELS: num(process.env.MAX_PNG_PIXELS, 25_000_000),
     MAX_PDF_PAGES: num(process.env.MAX_PDF_PAGES, 200),
     // Renders one API key may have running or queued at once. 0 = no cap, so a
     // batch caller still queues; shared deployments should set it.
