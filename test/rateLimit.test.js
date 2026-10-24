@@ -22,29 +22,25 @@ test('isRateLimitedFor only limits requests after the configured max is exceeded
   assert.equal(third.remaining, 0);
 });
 
-test('counter storage stays bounded as distinct clients accumulate', async () => {
+test('counter storage tracks active clients, not every client ever seen', (t) => {
+  // A mocked clock makes the sweep exact: no wall-clock timing, no slack in the bound.
+  t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
   const { isRateLimitedFor, _size } = loadRateLimit({
     RATE_LIMIT_MAX: '10',
-    RATE_LIMIT_WINDOW_MS: '1'
+    RATE_LIMIT_WINDOW_MS: '1000'
   });
 
-  // Sweeping is amortised to once per window and gated on the threshold, so the
-  // map size at any single instant is a function of wall-clock timing — the
-  // durable property is that it tracks *active* clients, not every client ever
-  // seen. Five waves, each older than the window by the time the next starts.
-  const WAVE = 1100;
+  const WAVE = 1100; // above the 1024-key sweep threshold
   for (let wave = 0; wave < 5; wave++) {
     for (let i = 0; i < WAVE; i++) isRateLimitedFor(`wave${wave}-client${i}`);
-    await new Promise(r => setTimeout(r, 5));
+    // The first key of a wave finds every earlier wave older than the window and
+    // sweeps it, so only the current wave is ever held.
+    assert.equal(_size(), WAVE, `after wave ${wave}`);
+    t.mock.timers.tick(1001);
   }
-  isRateLimitedFor('straggler');
 
-  // 5500 distinct ids were seen. At worst the map holds the current wave plus a
-  // previous one not yet swept; it must never approach the total.
-  assert.ok(
-    _size() <= 2 * WAVE + 10,
-    `expected bounded storage, map held ${_size()} after ${5 * WAVE} distinct ids`
-  );
+  isRateLimitedFor('straggler');
+  assert.equal(_size(), 1, '5500 distinct ids were seen; only the live one remains');
 });
 
 test('the sweep is amortised: a long window does not rescan the map on every new key', () => {

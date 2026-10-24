@@ -126,3 +126,14 @@ test('page.pdf gets the same millimetres the scale maths used, for a numeric mar
   await render(r, {});
   assert.equal(pdfArgs.margin.top, '10mm');
 });
+
+test('Chromium-shaped failures surface as 500 and always release the slot', async () => {
+  const closedBrowser = loadRender({ newContext: async () => { throw new Error('Target page, context or browser has been closed'); } });
+  await assert.rejects(() => render(closedBrowser.render), (err) => !err.status || err.status === 500);
+  assert.deepEqual(closedBrowser.render._inFlight(), { active: 0, waiting: 0 });
+
+  const pdfFails = loadRender({ page: { pdf: async () => { throw new Error('Protocol error (Page.printToPDF): Target closed'); } } });
+  await assert.rejects(() => render(pdfFails.render), /Target closed/);
+  assert.deepEqual(pdfFails.render._inFlight(), { active: 0, waiting: 0 });
+  assert.equal(pdfFails.state.contexts[0].closed, true, 'the context is closed even though the render failed');
+});

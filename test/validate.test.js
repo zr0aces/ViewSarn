@@ -152,3 +152,17 @@ test('save must be a boolean and outPath a non-empty string', () => {
   assert.match(validateBody({ outPath: '' }), /"outPath"/);
   assert.match(validateBody({ outPath: 'a\0b' }), /"outPath"/);
 });
+
+test('every option validateOptions reads has a rejecting case', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(require.resolve('../src/validate'), 'utf8');
+  const read = source.match(/const \{([^}]+)\} = options;/)[1].split(',').map(k => k.trim());
+  const bad = {
+    format: 'Z9', orientation: 'sideways', margin: 'wide', dpi: 0, scale: 5,
+    filename: 'a/b', waitUntil: 'never', png: 'yes', single: 'yes'
+  };
+  for (const key of read) {
+    assert.ok(key in bad, `"${key}" is validated but this table has no bad value for it`);
+    assert.notEqual(validateOptions({ [key]: bad[key] }), null, `${key}: ${JSON.stringify(bad[key])} must be rejected`);
+  }
+});
