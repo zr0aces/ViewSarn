@@ -55,3 +55,9 @@ Commit: `chore: link AGENTS.md and GEMINI.md to CLAUDE.md`.
 - Someone may use `wrap_html.sh`; git history keeps it.
 - Symlinked agent files break tools that do not follow links; fall back to pointer files.
 - Revert per commit.
+
+## EXECUTE notes (2026-10-24)
+
+- Step 4 was a no-op. `AGENTS.md` and `GEMINI.md` are already git symlinks (mode 120000) to `CLAUDE.md`; the audit read them as copies because `diff` and `cmp` follow links. The audit report was corrected.
+- Step 2 was verified end to end against the image (PDF, PNG with `--single --dpi`, `--save` writing one file, a wrong key exiting 3 without creating the output file) and with `shellcheck` (clean, run from the `koalaman/shellcheck` image). `test/convertCli.test.js` covers it without a server.
+- Step 3: the six prose docs were checked against the code for env vars (every variable read in `src/` is documented), defaults, status codes, option ranges, health checks, module lists and the Node version. Fixed: `dpi` range, `filename` rules, in-container `curl` healthchecks (two), Node 18 watch-mode comment, `development.md` module list and env list, and the status-code section of `api_docs.md`. This was a targeted check, not a word-by-word read of 3,400 lines, so other prose drift may remain.

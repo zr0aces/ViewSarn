@@ -110,7 +110,7 @@ services:
       - ./src:/app/src
       - ./server.js:/app/server.js
       - ./output:/output
-    command: node --watch server.js  # Node 18+ watch mode
+    command: node --watch server.js  # Node's built-in watch mode (the project requires Node 24)
 ```
 
 Start with:
@@ -124,12 +124,20 @@ docker compose -f docker-compose.dev.yml up
 
 ```
 ViewSarn/
-├── server.js              # Main entry point, Express app setup
+├── server.js              # Entry point: startup checks, browser, listen, shutdown
 ├── src/
+│   ├── app.js             # createApp(): Express app built from injected collaborators
 │   ├── config.js          # Configuration management (env vars)
 │   ├── auth.js            # Authentication logic (API keys)
 │   ├── rateLimit.js       # Rate limiting implementation
-│   ├── render.js          # Playwright rendering engine
+│   ├── render.js          # Playwright rendering engine, browser lifecycle, slots
+│   ├── limits.js          # Pure PNG-pixel and PDF-page estimates
+│   ├── egress.js          # Destination check for requests made by rendered HTML
+│   ├── paper.js           # Paper sizes and margin parsing
+│   ├── save.js            # Contained, per-key writes for save=true
+│   ├── contentDisposition.js  # RFC 6266 header builder
+│   ├── validate.js        # Option and body validation
+│   ├── httpErrors.js      # Body-parser and final error middleware
 │   └── logger.js          # Pino logger configuration
 ├── fonts/                 # Font files for Docker image
 │   ├── Sarabun/
@@ -160,14 +168,13 @@ Generated/Runtime:
 ### Key Files Explained
 
 #### `server.js`
-Main application entry point. Sets up Express server, routes, middleware, and graceful shutdown.
+Process entry point. The HTTP layer lives in `src/app.js` (`createApp`), which takes its collaborators as arguments so `test/app.test.js` can drive it with stubs and no browser.
 
 **Key responsibilities:**
-- Initialize browser instance
-- Configure Express middleware
-- Define routes (`/convert`, `/health`)
-- Handle auth and rate limiting
-- Implement graceful shutdown
+- Refuse to start with no key source unless `AUTH_DISABLED=true`
+- Launch the browser; exit with a fatal log if it cannot
+- Build the app with the real modules and listen
+- Graceful shutdown with a deadline (`SHUTDOWN_TIMEOUT_MS`)
 
 #### `src/config.js`
 Centralizes all configuration from environment variables.
@@ -175,7 +182,9 @@ Centralizes all configuration from environment variables.
 **Exports:**
 - `PORT` - HTTP server port
 - `OUTPUT_DIR` - Directory for saved files
-- `API_KEY_ENV` - Single API key (if used)
+- `API_KEY_ENV` - Single API key from the `API_KEY` environment variable (if used)
+- `AUTH_DISABLED` - `true` to run with no keys on purpose; otherwise a service with no key source does not start
+- `AUTH_FAIL_MAX` - Wrong keys per IP per window before `429` (default: `30`)
 - `API_KEYS_FILE` - Path to API keys file
 - `API_KEYS_RELOAD_MS` - Key reload interval
 - `RATE_LIMIT_MAX` - Max requests per window
@@ -183,6 +192,12 @@ Centralizes all configuration from environment variables.
 - `RENDER_CONCURRENCY` - Max simultaneous Chromium pages (default: `os.availableParallelism()`)
 - `RENDER_QUEUE_MAX` - Max requests waiting for a render slot before `503` (default: `100`)
 - `RENDER_TIMEOUT_MS` - Per-render deadline before `504` (default: `60000`)
+- `RENDER_QUEUE_WAIT_MS` - Longest a queued request waits for a slot before `503` (default: `30000`)
+- `MAX_PNG_PIXELS`, `MAX_PDF_PAGES` - Output ceilings, refused with `413` (defaults: `25000000`, `200`)
+- `MAX_INFLIGHT_PER_KEY` - Renders one key may have running or queued; `0` is no cap (default: `0`)
+- `OUTPUT_MAX_BYTES` - Bytes one key may keep under `OUTPUT_DIR`; `0` is no cap (default: `0`)
+- `EGRESS_ALLOW` - Hostnames, IPs and CIDRs rendered HTML may reach even though they are private
+- `SHUTDOWN_TIMEOUT_MS` - Graceful shutdown deadline before a forced exit (default: `10000`)
 - `BODY_LIMIT` - Max request body size (default: `15mb`). Multiplies with `RENDER_QUEUE_MAX` to bound backlog memory — see the sizing worksheet in `deployment.md`
 - `CORS_ORIGINS` - Comma-separated allowed origins, or `*`. Empty (default) sends no CORS headers
 - `METRICS_ENABLED` - Set to `true` to expose `GET /metrics` in Prometheus format (default: off)
@@ -191,7 +206,7 @@ Centralizes all configuration from environment variables.
 - `IS_PRODUCTION` - Derived from `NODE_ENV`; selects raw JSON logging over `pino-pretty`
 
 #### `src/validate.js`
-Validates the `options` object before rendering — paper format, orientation, `waitUntil`, margin units, dpi and scale ranges, and a filename with no path separators. Returns an error string or `null`. Rejecting beats coercing: a typo in `format` used to fall back to A4 and return a plausible-looking wrong-sized document.
+Validates the `options` object and the body-level `save` and `outPath` before rendering — paper format, orientation, `waitUntil`, booleans, margin units and printable area, dpi and scale ranges, and a filename with no path separators, quotes or control characters. Returns an error string or `null`. Rejecting beats coercing: a typo in `format` used to fall back to A4 and return a plausible-looking wrong-sized document.
 
 #### `src/httpErrors.js`
 `bodyErrorHandler` — Express error middleware for the two failures the body parser raises before any route runs (oversized body, malformed JSON), so they answer with the service's JSON error shape rather than Express's default HTML page.

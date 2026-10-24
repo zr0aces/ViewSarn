@@ -124,7 +124,7 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 
 - **Auth is on unless explicitly disabled (R-2.3).** The service is designed to run on a private network or behind a gateway, where `AUTH_DISABLED=true` is acceptable. Without a key source and without that opt-out it does not start. Anything reachable from outside must set `API_KEY` or mount `API_KEYS_FILE`.
 - **HTML is not sanitised (R-0.5).** Rendering caller-supplied HTML means running caller-supplied JavaScript in Chromium. Callers are trusted. Do not expose `/convert` directly to untrusted end users without a sanitising layer in front; per-request context isolation (R-4.1) limits cross-request leakage but is not a sandbox boundary.
-- **Key comparison is not constant-time.** Keys are compared with `===` and set membership, which is timing-variable. Acceptable for high-entropy keys on a private network; switch to `crypto.timingSafeEqual` if that assumption stops holding.
+- **Key comparison is constant-time (R-2.7).** Keys are compared as fixed-length SHA-256 digests (set membership for the keys file, `crypto.timingSafeEqual` for `API_KEY`), so response timing does not reveal a key's prefix.
 - **`/health` is unauthenticated (R-5.1)** and exposes the rate-limit configuration. Treat that as public information, or block the path at the proxy.
 
 ---
@@ -150,8 +150,8 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 |---|---|---|
 | `200` | Converted, or saved | R-1.1, R-1.4 |
 | `400` | `html` missing or not a string | R-1.2 |
-| `400` | Malformed JSON body — **HTML response** | R-1.16 |
-| `413` | Body exceeded `BODY_LIMIT` — **HTML response** | R-1.15, R-1.16 |
+| `400` | Malformed JSON body — JSON | R-1.16 |
+| `413` | Body exceeded `BODY_LIMIT` — JSON | R-1.15, R-1.16 |
 | `401` | Key missing or wrong, where auth is configured | R-2.6 |
 | `429` | Rate limit exceeded | R-3.2 |
 | `500` | Render failed | — |

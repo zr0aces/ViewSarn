@@ -168,8 +168,8 @@ Authorization: Bearer your-api-key
 | `margin` | string | `"10mm"` | e.g., `"10mm"`, `"1cm"`, `"0.5in"` | Page margins. `mm`, `cm`, and `in` are understood; a bare number is treated as **mm**. Other CSS units (`px`, `pt`) are not parsed — the numeric part is read as mm. |
 | `single` | boolean | `false` | `true`, `false` | Force content to fit on single page (shrink-to-fit) |
 | `scale` | number\|null | `null` | `0.1` to `2.0` or `null` | Manual scale override. If `null`, scale is auto-calculated |
-| `dpi` | number | `96` | Any positive number | PNG resolution in DPI (affects PNG output only) |
-| `filename` | string\|null | `null` | Any valid filename | Suggested filename for download or save |
+| `dpi` | number | `96` | `1` to `600` | PNG resolution in DPI (affects PNG output only). Output that would exceed `MAX_PNG_PIXELS` is refused with `413`. |
+| `filename` | string\|null | `null` | Up to 200 characters, no `/`, `\`, quotes or control characters | Suggested filename for download or save. Non-Latin names such as Thai are sent as an RFC 5987 `filename*` as well as an ASCII fallback. |
 | `waitUntil` | string | `"networkidle"` | `load`, `domcontentloaded`, `networkidle`, `commit` | When to consider the page ready. `networkidle` waits for 500ms of network silence — correct for HTML pulling remote images or fonts, but that half-second is pure latency for self-contained HTML. Use `load` there. Webfonts are always awaited via `document.fonts.ready` regardless of this setting. |
 
 #### Response (Stream Mode - save=false)
@@ -297,6 +297,20 @@ Returned once more than `RENDER_QUEUE_MAX` (default 100) requests are already wa
 ```
 
 One render may run for at most `RENDER_TIMEOUT_MS` (default 60000). Usually means the HTML never finished loading — check for resources that never resolve, and consider `waitUntil: "load"`.
+
+**413 Payload Too Large** (render) - The output would be too large
+
+A PNG that would exceed `MAX_PNG_PIXELS` device pixels (default 25,000,000; a full-page PNG counts the whole document) or a PDF over `MAX_PDF_PAGES` (default 200) is refused before it is produced. `dpi` is never lowered silently: reduce `dpi`, use `scale`, or split the document.
+
+**415 Unsupported Media Type** - The body used a charset other than UTF-8 or an unsupported `Content-Encoding`
+
+**429 Too Many Requests** (other causes) - `Too many failed authentication attempts` after `AUTH_FAIL_MAX` wrong keys from one IP, and `Too many renders in flight for this key` when `MAX_INFLIGHT_PER_KEY` is set. Both carry `Retry-After`.
+
+**503 Service Unavailable** (other causes) - `Timed out waiting for a render slot` after `RENDER_QUEUE_WAIT_MS` in the queue, and `Browser unavailable` while Chromium is being replaced.
+
+**507 Insufficient Storage** - `save: true` would take your directory past `OUTPUT_MAX_BYTES`
+
+**404 Not Found** - Unknown route. JSON like every other error.
 
 **500 Internal Server Error** - Rendering failed
 

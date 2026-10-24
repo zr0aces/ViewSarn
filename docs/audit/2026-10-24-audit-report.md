@@ -175,8 +175,8 @@ Commit audited: `facd5c7` (branch `main`, clean tree). Version `2026.8.3`.
 
 ### [F-16] [LOW] — Documentation and spec drift
 - **Location:** `documents/specification.md:118, 144-145`; `documents/deployment.md:184, 380`; `AGENTS.md`, `GEMINI.md`
-- **Evidence:** Spec §6 says keys are compared with `===` (not constant-time), contradicting R-2.7 (SHA-256 digests, `timingSafeEqual`). Spec §8 labels the 400/413 responses "HTML response", contradicting R-1.16 (JSON). `deployment.md` healthchecks use `curl`, which the slim image does not ship (compose notes this). `AGENTS.md` and `GEMINI.md` are byte-identical copies of `CLAUDE.md`.
-- **Recommended fix:** Correct the two spec lines. Use the `node -e fetch` probe in deployment examples. Keep one source for agent instructions.
+- **Evidence:** Spec §6 says keys are compared with `===` (not constant-time), contradicting R-2.7 (SHA-256 digests, `timingSafeEqual`). Spec §8 labels the 400/413 responses "HTML response", contradicting R-1.16 (JSON). `deployment.md` healthchecks use `curl`, which the slim image does not ship (compose notes this).
+- **Recommended fix:** Correct the two spec lines. Use the `node -e fetch` probe in deployment examples.
 
 ### [F-17] [INFO] — Supply chain and image hygiene
 - **Location:** `Dockerfile:2`, `.github/workflows/*.yml`
@@ -287,7 +287,7 @@ Highest value missing, in order:
 **Not read line by line (unverified)**
 - `scripts/version-control.test.mjs`: executed (20 pass), not read.
 - `documents/api_docs.md`, `architecture.md`, `deployment.md`, `development.md`, `fonts.md`, `README.md`: searched for specific claims only (key comparison, `save`, `waitUntil`, healthcheck, SSRF). Other drift may exist.
-- `AGENTS.md`, `GEMINI.md`: confirmed byte-identical to `CLAUDE.md` via `diff`.
+- `AGENTS.md`, `GEMINI.md`: symlinks to `CLAUDE.md` (git mode 120000). An earlier draft called them byte-identical copies, because `diff` follows symlinks; that was wrong, and no change is needed.
 - `LICENSE`: not read; no operational impact.
 
 **Excluded**
