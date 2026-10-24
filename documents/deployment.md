@@ -39,6 +39,10 @@ mkdir -p output
 
 3. Create API keys file (optional for dev):
 ```bash
+# Using generator script:
+node scripts/generate-apikey.js -f apikeys.txt
+
+# Or manually:
 cat > apikeys.txt << EOF
 dev-key-1
 dev-key-2
@@ -274,12 +278,7 @@ echo "🚀 Deploying ViewSarn to Production..."
 
 # Generate strong API keys
 echo "📝 Generating API keys..."
-cat > apikeys.txt << EOF
-$(openssl rand -hex 32)
-$(openssl rand -hex 32)
-$(openssl rand -hex 32)
-EOF
-chmod 600 apikeys.txt
+node scripts/generate-apikey.js -n 3 -f apikeys.txt
 
 # Create output directory
 mkdir -p output

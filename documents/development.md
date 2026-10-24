@@ -152,6 +152,12 @@ ViewSarn/
 │   └── fonts.md           # Typography & Thai language support
 ├── Dockerfile             # Production Docker image
 ├── docker-compose.yml     # Docker Compose configuration
+├── scripts/               # Utility and maintenance scripts
+│   ├── generate-apikey.js # Automate cryptographically secure API key generation
+│   ├── generate-apikey.sh # Shell wrapper for API key generation
+│   ├── release.js         # CalVer release preparation wrapper
+│   ├── smoke.js           # Smoke test against running instance
+│   └── sync-version.js    # CalVer metadata synchronization
 ├── package.json           # Node.js dependencies
 ├── .gitignore             # Git ignore rules
 ├── convert-cli.sh         # CLI testing tool
@@ -468,6 +474,24 @@ node test-convert.js
 
 # Save to server
 ./convert-cli.sh --file example.html --api-key dev-key-123 --save --outpath test/result.pdf
+```
+
+### API Key Generation Tooling
+
+ViewSarn includes scripts in `scripts/` to automate generating 256-bit cryptographically secure API keys:
+
+```bash
+# Generate key and print principal & log label info
+npm run apikey:generate
+
+# Append to apikeys.txt with comment (sets 0600 permissions)
+npm run apikey:generate -- -f apikeys.txt -c "dev-worker"
+
+# Extract raw key to environment variable
+export API_KEY=$(node scripts/generate-apikey.js -q)
+
+# Shell script equivalent
+./scripts/generate-apikey.sh -f apikeys.txt -c "dev-worker"
 ```
 
 ### Automated Testing

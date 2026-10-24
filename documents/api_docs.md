@@ -44,6 +44,30 @@ Authorization: Bearer your-api-key-here
 x-api-key: your-api-key-here
 ```
 
+### Generating API Keys
+
+ViewSarn provides automated tooling to generate cryptographically strong 256-bit API keys and append them directly to your keys file with safe file permissions (`0600`):
+
+```bash
+# Generate a key and display key, label, and principal
+npm run apikey:generate
+
+# Generate a raw key for environment variables or CI/CD
+export API_KEY=$(node scripts/generate-apikey.js -q)
+
+# Append to apikeys.txt with a descriptive comment
+npm run apikey:generate -- -f apikeys.txt -c "payment-service"
+
+# Generate multiple keys with a prefix as JSON
+node scripts/generate-apikey.js -n 3 --prefix "vs_" --json
+
+# Shell script equivalent (fallback to openssl when Node is absent)
+./scripts/generate-apikey.sh -f apikeys.txt -c "worker"
+```
+
+**Key Principal and Log Correlation:**
+API keys are never logged directly. ViewSarn computes a SHA-256 digest principal (`k:<sha256>`) and uses the first 12 hex characters as its human-readable `label` (e.g. `a588835120e6`). The generator script prints this `label` upon generation so operators can correlate server logs and saved output directories (`/output/<label>/`) back to the issuing key without recording the raw secret.
+
 ### Authentication Errors
 
 **401 Unauthorized** - Invalid or missing API key
