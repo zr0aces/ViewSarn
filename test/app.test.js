@@ -114,17 +114,41 @@ test('/health is open; /metrics reports counters', async () => {
   try {
     const health = await fetch(`${s.url}/health`);
     assert.equal(health.status, 200);
-    assert.equal((await health.json()).ok, true);
+    const healthBody = await health.json();
+    assert.equal(healthBody.ok, true);
+    assert.equal('pid' in healthBody, false, '/health must not expose the process id');
 
     await post(s.url, html);
-    const metrics = await (await fetch(`${s.url}/metrics`)).text();
+    const metrics = await (await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).text();
     assert.match(metrics, /viewsarn_renders_total 1/);
   } finally { await s.close(); }
 });
 
+test('/metrics needs a key when auth is configured, and is open when it is not', async () => {
+  let s = await boot();
+  try { assert.equal((await fetch(`${s.url}/metrics`)).status, 401); } finally { await s.close(); }
+
+  s = await boot({ auth: { authConfigured: () => false } });
+  try { assert.equal((await fetch(`${s.url}/metrics`)).status, 200); } finally { await s.close(); }
+});
+
 test('/metrics is 404 when disabled', async () => {
   const s = await boot({ config: { METRICS_ENABLED: false } });
-  try { assert.equal((await fetch(`${s.url}/metrics`)).status, 404); } finally { await s.close(); }
+  try { assert.equal((await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).status, 404); } finally { await s.close(); }
+});
+
+test('wrong keys past AUTH_FAIL_MAX get 429, and a correct key from the same IP still works', async () => {
+  const { loadFreshModules } = require('./helpers');
+  const limiter = loadFreshModules({ RATE_LIMIT_MAX: '1000' }, ['../src/rateLimit']);
+  const s = await boot({ limiter, config: { AUTH_FAIL_MAX: 3 } });
+  try {
+    const wrong = () => post(s.url, html, { Authorization: 'Bearer nope' });
+    assert.deepEqual([(await wrong()).status, (await wrong()).status, (await wrong()).status], [401, 401, 401]);
+    const blocked = await wrong();
+    assert.equal(blocked.status, 429);
+    assert.ok(blocked.headers.get('retry-after'));
+    assert.equal((await post(s.url, html)).status, 200, 'a valid key is never throttled by failed attempts');
+  } finally { await s.close(); }
 });
 
 // Known defects from the 2026-10-24 audit. Each asserts the desired behavior and is

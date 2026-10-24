@@ -21,7 +21,9 @@ function maybeSweep(now) {
     }
 }
 
-function isRateLimitedFor(id) {
+// `max` lets a caller count a different budget in the same window machinery, for
+// example failed authentications, without a second limiter.
+function isRateLimitedFor(id, max = RATE_LIMIT_MAX) {
     const now = Date.now();
     let rec = counters.get(id);
 
@@ -36,8 +38,8 @@ function isRateLimitedFor(id) {
     rec.count += 1;
     const resetMs = RATE_LIMIT_WINDOW_MS - (now - rec.windowStart);
 
-    if (rec.count > RATE_LIMIT_MAX) return { limited: true, remaining: 0, resetMs };
-    return { limited: false, remaining: RATE_LIMIT_MAX - rec.count, resetMs };
+    if (rec.count > max) return { limited: true, remaining: 0, resetMs };
+    return { limited: false, remaining: max - rec.count, resetMs };
 }
 
 module.exports = { isRateLimitedFor, _size: () => counters.size };

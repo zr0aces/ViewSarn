@@ -30,7 +30,7 @@ if (!authConfigured() && !AUTH_DISABLED) {
   const { app } = createApp({
     config,
     logger,
-    auth: { validateAuth, isAuthFileInUse },
+    auth: { validateAuth, authConfigured, isAuthFileInUse },
     limiter: { isRateLimitedFor },
     render: { renderHtmlToBuffer, inFlight: _inFlight },
     validate: { validateOptions },

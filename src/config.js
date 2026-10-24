@@ -35,6 +35,8 @@ module.exports = {
     // Explicit opt-out for running with no keys at all. Without it, a service with no
     // key source refuses to start (server.js) and refuses every request (auth.js).
     AUTH_DISABLED: process.env.AUTH_DISABLED === 'true',
+    // Wrong keys tolerated per client IP per window before further ones get a 429.
+    AUTH_FAIL_MAX: num(process.env.AUTH_FAIL_MAX, 30),
     API_KEYS_FILE: process.env.API_KEYS_FILE || '/app/apikeys.txt',
     API_KEYS_RELOAD_MS: num(process.env.API_KEYS_RELOAD_MS, 30_000),
     RATE_LIMIT_WINDOW_MS: num(process.env.RATE_LIMIT_WINDOW_MS, 60_000),

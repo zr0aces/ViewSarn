@@ -457,7 +457,6 @@ Content-Type: application/json
 ```json
 {
   "ok": true,
-  "pid": 24,
   "apiAuthFileInUse": true,
   "rate_limit_window_ms": 60000,
   "rate_limit_max": 120
@@ -467,7 +466,6 @@ Content-Type: application/json
 | Field | Type | Description |
 |-------|------|-------------|
 | `ok` | boolean | Always `true` if server is running |
-| `pid` | number | Process ID of the Node.js process |
 | `apiAuthFileInUse` | boolean | `true` if using API keys file, `false` if single key or no auth |
 | `rate_limit_window_ms` | number | Rate limit window in milliseconds |
 | `rate_limit_max` | number | Maximum requests per window |
@@ -482,7 +480,6 @@ Response:
 ```json
 {
   "ok": true,
-  "pid": 42,
   "apiAuthFileInUse": true,
   "rate_limit_window_ms": 60000,
   "rate_limit_max": 120

@@ -12,13 +12,13 @@ async function ensureDir(dir, logger) {
 
 // Builds the Express app from injected collaborators, so tests can drive the
 // whole HTTP layer without a browser, a real keys file, or a bound port.
-//   auth       = { validateAuth, isAuthFileInUse }
+//   auth       = { validateAuth, authConfigured, isAuthFileInUse }
 //   limiter    = { isRateLimitedFor }
 //   render     = { renderHtmlToBuffer, inFlight }
 //   validate   = { validateOptions }
 //   httpErrors = { bodyErrorHandler }
 function createApp({ config, logger, auth, limiter, render, validate, httpErrors }) {
-    const { OUTPUT_DIR, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
+    const { OUTPUT_DIR, AUTH_FAIL_MAX, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
 
     const app = express();
     app.disable('x-powered-by');
@@ -64,15 +64,25 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
     app.use((req, res, next) => {
         // /health skips authentication only: container healthchecks and load
         // balancer probes cannot present a key. It stays rate limited, so an
-        // unauthenticated caller cannot poll it for free.
-        const isHealth = req.path === '/health' || req.path === '/metrics';
+        // unauthenticated caller cannot poll it for free. /metrics is open only
+        // when the service itself runs without keys.
+        const skipAuth = req.path === '/health' || (req.path === '/metrics' && !auth.authConfigured());
 
-        const { valid, principal } = isHealth ? { valid: true, principal: null } : auth.validateAuth(req);
+        const { valid, principal } = skipAuth ? { valid: true, principal: null } : auth.validateAuth(req);
 
         metrics.requests += 1;
 
         if (!valid) {
             metrics.unauthorized += 1;
+            // Wrong keys are counted per IP, after validation: a valid key always
+            // passes, so one noisy client behind a shared proxy IP cannot lock out
+            // good ones. Past the budget the answer changes from 401 to 429.
+            const fail = limiter.isRateLimitedFor(`authfail:${req.ip || req.connection.remoteAddress || 'unknown'}`, AUTH_FAIL_MAX);
+            if (fail.limited) {
+                res.setHeader('Retry-After', String(Math.ceil(fail.resetMs / 1000)));
+                metrics.rateLimited += 1;
+                return res.status(429).json({ error: 'Too many failed authentication attempts', retry_after_seconds: Math.ceil(fail.resetMs / 1000), request_id: req.requestId });
+            }
             res.set('WWW-Authenticate', 'Bearer realm="PlaywrightRender"');
             return res.status(401).json({ error: 'Unauthorized', request_id: req.requestId });
         }
@@ -201,7 +211,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
 
     if (METRICS_ENABLED) {
         // Prometheus text exposition. Hand-rolled: six counters do not justify a
-        // dependency. Unauthenticated like /health, and rate limited the same way.
+        // dependency. Requires a key whenever auth is configured, and is rate limited like every route.
         app.get('/metrics', (req, res) => {
             const inFlight = render.inFlight();
             const lines = [
@@ -223,7 +233,6 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
 
     app.get('/health', (req, res) => res.json({
         ok: true,
-        pid: process.pid,
         apiAuthFileInUse: auth.isAuthFileInUse(),
         rate_limit_window_ms: RATE_LIMIT_WINDOW_MS,
         rate_limit_max: RATE_LIMIT_MAX
