@@ -170,7 +170,7 @@ test('F-08: a Thai filename is served', { todo: 'F-08 plan 04' }, async () => {
   } finally { await s.close(); }
 });
 
-test('F-10: a non-string outPath is a 400', { todo: 'F-10 plan 04' }, async () => {
+test('F-10: a non-string outPath is a 400', async () => {
   const s = await boot();
   try {
     const r = await post(s.url, { ...html, save: true, outPath: { a: 1 } });

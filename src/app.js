@@ -15,7 +15,7 @@ async function ensureDir(dir, logger) {
 //   auth       = { validateAuth, authConfigured, isAuthFileInUse }
 //   limiter    = { isRateLimitedFor }
 //   render     = { renderHtmlToBuffer, inFlight, browserReady }
-//   validate   = { validateOptions }
+//   validate   = { validateOptions, validateBody }
 //   httpErrors = { bodyErrorHandler }
 function createApp({ config, logger, auth, limiter, render, validate, httpErrors }) {
     const { OUTPUT_DIR, AUTH_FAIL_MAX, MAX_INFLIGHT_PER_KEY = 0, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
@@ -117,7 +117,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
                 return res.status(400).json({ error: 'Missing "html" (string)', request_id: req.requestId });
             }
 
-            const invalid = validate.validateOptions(body.options);
+            const invalid = validate.validateBody(body) || validate.validateOptions(body.options);
             if (invalid) return res.status(400).json({ error: invalid, request_id: req.requestId });
 
             const options = Object.assign({

@@ -2,7 +2,7 @@
 const config = require('./src/config');
 const logger = require('./src/logger');
 const { createApp, ensureDir } = require('./src/app');
-const { validateOptions } = require('./src/validate');
+const { validateOptions, validateBody } = require('./src/validate');
 const { bodyErrorHandler } = require('./src/httpErrors');
 const fs = require('fs');
 const { validateAuth, authConfigured, isAuthFileInUse } = require('./src/auth');
@@ -33,7 +33,7 @@ async function main() {
     auth: { validateAuth, authConfigured, isAuthFileInUse },
     limiter: { isRateLimitedFor },
     render: { renderHtmlToBuffer, inFlight: _inFlight, browserReady },
-    validate: { validateOptions },
+    validate: { validateOptions, validateBody },
     httpErrors: { bodyErrorHandler }
   });
 

@@ -1,16 +1,10 @@
 const { chromium } = require('playwright');
 const { RENDER_CONCURRENCY, RENDER_QUEUE_MAX, RENDER_QUEUE_WAIT_MS, RENDER_TIMEOUT_MS, MAX_PNG_PIXELS, MAX_PDF_PAGES } = require('./config');
 const { pngPixels, pdfPages } = require('./limits');
+const { PAPER_SIZES, PX_PER_MM, parseMarginToMm } = require('./paper');
 const logger = require('./logger');
 
-const PAPER_SIZES = {
-    A4: { w: 210, h: 297 },
-    A5: { w: 148, h: 210 },
-    LETTER: { w: 216, h: 279 },
-    LEGAL: { w: 216, h: 356 }
-};
 const WAIT_UNTIL = new Set(['load', 'domcontentloaded', 'networkidle', 'commit']);
-const PX_PER_MM = 96 / 25.4;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 2;
 // A wedged context.close() must not pin a render slot for good.
@@ -117,15 +111,6 @@ function releaseSlot() {
     else active -= 1;
 }
 
-function parseMarginToMm(m) {
-    if (!m) return 0;
-    if (typeof m === 'number') return m;
-    if (m.endsWith('mm')) return parseFloat(m.slice(0, -2));
-    if (m.endsWith('cm')) return parseFloat(m.slice(0, -2)) * 10;
-    if (m.endsWith('in')) return parseFloat(m.slice(0, -2)) * 25.4;
-    return parseFloat(m);
-}
-
 function clamp(s) {
     return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 }
@@ -225,7 +210,9 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
             if (pdfPages({ contentHeight: contentSize.height, scale, availableHeightPx }) > MAX_PDF_PAGES) {
                 throw httpError(413, 'Rendered document would exceed the page limit');
             }
-            const margin = opts.margin || '10mm';
+            // The same millimetres the scale maths used, so a numeric margin is not
+            // read as mm here and as pixels by Playwright.
+            const margin = `${marginMm}mm`;
             buffer = await page.pdf({
                 printBackground: true,
                 format: paper, // already narrowed to a PAPER_SIZES key above

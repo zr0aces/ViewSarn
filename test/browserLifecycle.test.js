@@ -114,3 +114,14 @@ test('a queued request that waits past RENDER_QUEUE_WAIT_MS gets 503 and leaves 
   assert.equal(r._inFlight().active, 1);
   void first;
 });
+
+test('page.pdf gets the same millimetres the scale maths used, for a numeric margin', async () => {
+  let pdfArgs;
+  const { render: r } = loadRender({ page: { pdf: async (args) => { pdfArgs = args; return Buffer.from('pdf'); } } });
+  await render(r, { margin: 10 });
+  assert.deepEqual(pdfArgs.margin, { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' });
+  await render(r, { margin: '1cm' });
+  assert.equal(pdfArgs.margin.top, '10mm');
+  await render(r, {});
+  assert.equal(pdfArgs.margin.top, '10mm');
+});

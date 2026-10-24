@@ -2,7 +2,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
 const pino = require('pino');
-const { validateOptions } = require('../src/validate');
+const { validateOptions, validateBody } = require('../src/validate');
 const { bodyErrorHandler } = require('../src/httpErrors');
 const { createApp } = require('../src/app');
 
@@ -69,7 +69,7 @@ function makeDeps(over = {}) {
       browserReady: () => true,
       ...over.render
     },
-    validate: { validateOptions },
+    validate: { validateOptions, validateBody },
     httpErrors: { bodyErrorHandler }
   };
   return { deps, logs, outputDir };
