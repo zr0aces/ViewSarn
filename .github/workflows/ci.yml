@@ -32,6 +32,10 @@ jobs:
       - name: Check version consistency
         run: npm run version:check
 
+      # shellcheck ships on the ubuntu runner image.
+      - name: Lint shell scripts
+        run: shellcheck convert-cli.sh
+
   # Builds the real image and renders a Thai document with it, so a broken
   # Dockerfile, a Playwright/browser mismatch or a missing font fails the pull
   # request instead of the release. Skipped on feature-branch pushes; the pull
