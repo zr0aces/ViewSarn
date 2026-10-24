@@ -1,0 +1,81 @@
+services:
+  viewsarn:
+    image: ghcr.io/zr0aces/viewsarn:latest
+    container_name: viewsarn
+    restart: always
+    environment:
+      - PORT=3000
+      - OUTPUT_DIR=/output
+      - API_KEYS_FILE=/app/apikeys.txt
+      - API_KEYS_RELOAD_MS=30000
+
+      # Reverse proxy trust: 1 hop (nginx service below)
+      - TRUST_PROXY=1
+
+      # Rate limiting (per-process counter)
+      - RATE_LIMIT_MAX=120
+      - RATE_LIMIT_WINDOW_MS=60000
+      - AUTH_FAIL_MAX=30
+
+      # Render memory budget:
+      # ~130MB baseline + (2 renders * ~150MB) + (32 queued * 15MB) = ~910MB < 2GB limit
+      - RENDER_CONCURRENCY=2
+      - RENDER_QUEUE_MAX=32
+      - RENDER_TIMEOUT_MS=60000
+      - RENDER_QUEUE_WAIT_MS=30000
+      - BODY_LIMIT=15mb
+      - MAX_PNG_PIXELS=25000000
+      - MAX_PDF_PAGES=200
+
+      # SSRF egress protection: empty blocks private/loopback/cloud metadata
+      - EGRESS_ALLOW=
+
+      - METRICS_ENABLED=true
+      - LOG_LEVEL=info
+      - NODE_ENV=production
+      - HOME=/tmp
+    volumes:
+      - viewsarn_output:/output
+      - ./apikeys.txt:/app/apikeys.txt:ro
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    shm_size: "1gb"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:alpine-slim
+    container_name: viewsarn_nginx
+    restart: always
+    ports:
+      - "80:80"
+      # - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - viewsarn
+    networks:
+      - internal
+      - public
+
+volumes:
+  viewsarn_output:
+
+networks:
+  internal:
+    internal: true
+  public:

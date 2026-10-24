@@ -86,9 +86,7 @@ docker pull ghcr.io/zr0aces/viewsarn:2026.8.3
 **Run with docker:**
 ```bash
 # Create API keys file first
-cat > apikeys.txt << EOF
-your-secret-key
-EOF
+node scripts/generate-apikey.js -f apikeys.txt
 
 docker run -d \
   -p 3000:3000 \
@@ -161,43 +159,56 @@ To publish a new official image:
 
 #### docker-compose.yml (Production)
 
+A complete, ready-to-run setup is provided in [`examples/deployment/docker-compose/`](../examples/deployment/docker-compose/).
+
 ```yaml
 version: "3.8"
 
 services:
   viewsarn:
-    build: .
-    image: viewsarn:latest
+    image: ghcr.io/zr0aces/viewsarn:latest
     container_name: viewsarn
-    ports:
-      - "127.0.0.1:3000:3000"  # Bind to localhost only
+    restart: always
     environment:
       - PORT=3000
       - OUTPUT_DIR=/output
       - API_KEYS_FILE=/app/apikeys.txt
-      - RATE_LIMIT_MAX=200
+      - API_KEYS_RELOAD_MS=30000
+      - TRUST_PROXY=1
+      - RATE_LIMIT_MAX=120
       - RATE_LIMIT_WINDOW_MS=60000
+      - AUTH_FAIL_MAX=30
+      - RENDER_CONCURRENCY=2
+      - RENDER_QUEUE_MAX=32
+      - RENDER_TIMEOUT_MS=60000
+      - RENDER_QUEUE_WAIT_MS=30000
+      - BODY_LIMIT=15mb
+      - MAX_PNG_PIXELS=25000000
+      - MAX_PDF_PAGES=200
+      - EGRESS_ALLOW=
+      - METRICS_ENABLED=true
       - LOG_LEVEL=info
       - NODE_ENV=production
+      - HOME=/tmp
     volumes:
       - ./output:/output
       - ./apikeys.txt:/app/apikeys.txt:ro
-    shm_size: "2gb"
-    restart: always
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    shm_size: "1gb"
     deploy:
       resources:
         limits:
-          memory: 3G
-          cpus: '2'
+          memory: 2G
+          cpus: '1.0'
         reservations:
-          memory: 1G
-          cpus: '1'
+          memory: 512M
+          cpus: '0.5'
     logging:
       driver: "json-file"
       options:
@@ -309,6 +320,26 @@ else
     docker compose logs
     exit 1
 fi
+```
+
+### Bare-metal / Virtual Machine (Systemd)
+
+For native Linux host deployments without Docker, a hardened `systemd` unit configuration with process sandboxing (`ProtectSystem=strict`, `NoNewPrivileges=true`) is provided in [`examples/deployment/systemd/`](../examples/deployment/systemd/).
+
+```bash
+# Setup directories & permissions
+sudo mkdir -p /opt/viewsarn /var/lib/viewsarn/output /etc/viewsarn
+sudo chown -R www-data:www-data /var/lib/viewsarn/output /etc/viewsarn
+
+# Generate API key file
+sudo node /opt/viewsarn/scripts/generate-apikey.js -f /etc/viewsarn/apikeys.txt -c "systemd-prod"
+sudo chown www-data:www-data /etc/viewsarn/apikeys.txt
+sudo chmod 600 /etc/viewsarn/apikeys.txt
+
+# Install service unit
+sudo cp examples/deployment/systemd/viewsarn.service /etc/systemd/system/viewsarn.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now viewsarn
 ```
 
 ---
@@ -615,20 +646,24 @@ spec:
 
 ### Deploy to Kubernetes
 
-```bash
-# Save the above manifests to k8s/ directory, then apply
-mkdir -p k8s
-# (Save manifests to k8s/deployment.yaml)
+Ready-to-use production manifests with Kustomize configuration are located in [`examples/deployment/kubernetes/`](../examples/deployment/kubernetes/).
 
-# Apply manifests
-kubectl apply -f k8s/
+```bash
+# 1. Generate an API keys file (with 0600 permissions)
+node scripts/generate-apikey.js -f apikeys.txt -c "k8s-prod"
+
+# 2. Create Kubernetes Secret
+kubectl create secret generic viewsarn-keys --from-file=apikeys.txt=./apikeys.txt
+
+# 3. Apply manifests via Kustomize
+kubectl apply -k examples/deployment/kubernetes/
 
 # Check deployment
-kubectl get pods -l app=viewsarn
+kubectl get pods -l app.kubernetes.io/name=viewsarn
 kubectl get svc viewsarn
 
 # View logs
-kubectl logs -l app=viewsarn --tail=100 -f
+kubectl logs -l app.kubernetes.io/name=viewsarn --tail=100 -f
 
 # Check health
 kubectl port-forward svc/viewsarn 3000:80
@@ -639,33 +674,17 @@ curl http://localhost:3000/health
 
 ## Monitoring and Logging
 
-### Prometheus Metrics (Future Enhancement)
+### Prometheus Metrics
 
-While ViewSarn doesn't currently expose Prometheus metrics, you can add them:
+ViewSarn has built-in Prometheus metrics support. Set `METRICS_ENABLED=true` in the environment to expose `GET /metrics` in standard Prometheus text format:
 
-```javascript
-// Install prom-client
-npm install prom-client
-
-// Add to server.js
-const promClient = require('prom-client');
-const register = new promClient.Registry();
-
-// Define metrics
-const httpRequestDuration = new promClient.Histogram({
-  name: 'http_request_duration_seconds',
-  help: 'Duration of HTTP requests in seconds',
-  labelNames: ['method', 'route', 'status']
-});
-
-register.registerMetric(httpRequestDuration);
-
-// Expose /metrics endpoint
-app.get('/metrics', async (req, res) => {
-  res.set('Content-Type', register.contentType);
-  res.end(await register.metrics());
-});
+```yaml
+environment:
+  - METRICS_ENABLED=true
 ```
+
+When enabled, `/metrics` exposes request counters, render activity, queue depths, active slots, and error breakdowns (see [Scraping Metrics](#3c-scraping-metrics) for the metric inventory).
+
 
 ### Log Aggregation
 
@@ -721,8 +740,8 @@ sudo ufw enable
 ### 2. API Key Management
 
 ```bash
-# Generate strong keys
-openssl rand -hex 32
+# Generate strong keys with safe 0600 permissions
+node scripts/generate-apikey.js -n 3 -f apikeys.txt
 
 # Store in secrets manager (AWS example)
 aws secretsmanager create-secret \

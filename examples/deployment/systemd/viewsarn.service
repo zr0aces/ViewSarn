@@ -1,0 +1,42 @@
+[Unit]
+Description=ViewSarn HTML to PDF/PNG Conversion Service
+Documentation=https://github.com/zr0aces/ViewSarn
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/viewsarn
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5s
+
+# Process environment
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=OUTPUT_DIR=/var/lib/viewsarn/output
+Environment=API_KEYS_FILE=/etc/viewsarn/apikeys.txt
+Environment=API_KEYS_RELOAD_MS=30000
+Environment=RENDER_CONCURRENCY=2
+Environment=RENDER_QUEUE_MAX=32
+Environment=RENDER_TIMEOUT_MS=60000
+Environment=RENDER_QUEUE_WAIT_MS=30000
+Environment=RATE_LIMIT_MAX=120
+Environment=METRICS_ENABLED=true
+Environment=LOG_LEVEL=info
+
+# Hardening
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/viewsarn/output
+
+# File descriptor ceiling for Playwright & sockets
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

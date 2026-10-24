@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: viewsarn-config
+data:
+  PORT: "3000"
+  OUTPUT_DIR: "/output"
+  API_KEYS_FILE: "/app/apikeys.txt"
+  API_KEYS_RELOAD_MS: "30000"
+  TRUST_PROXY: "1"
+  RATE_LIMIT_MAX: "120"
+  RATE_LIMIT_WINDOW_MS: "60000"
+  RENDER_CONCURRENCY: "2"
+  RENDER_QUEUE_MAX: "32"
+  RENDER_TIMEOUT_MS: "60000"
+  RENDER_QUEUE_WAIT_MS: "30000"
+  BODY_LIMIT: "15mb"
+  MAX_PNG_PIXELS: "25000000"
+  MAX_PDF_PAGES: "200"
+  METRICS_ENABLED: "true"
+  LOG_LEVEL: "info"
+  NODE_ENV: "production"
+  HOME: "/tmp"

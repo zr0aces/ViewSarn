@@ -17,8 +17,8 @@ services:
       # Method 2: Single API key (uncomment to use)
       # - API_KEY=your-secret-key-here
       #
-      # Create apikeys.txt BEFORE `docker compose up`. If the file is missing,
-      # Docker creates a directory at that path and the service refuses to start.
+      # Create apikeys.txt BEFORE `docker compose up` (e.g. `npm run apikey:generate -- -f apikeys.txt`).
+      # If the file is missing, Docker creates a directory at that path and the service refuses to start.
       # To run with no keys on purpose, set AUTH_DISABLED=true. Confirm with:
       #   curl localhost:3000/health   ->  "apiAuthFileInUse": true
 
@@ -103,7 +103,7 @@ services:
       - ./output:/output
 
       # Mount API keys file (read-only)
-      # Create apikeys.txt in project root before starting
+      # Create apikeys.txt before starting: npm run apikey:generate -- -f apikeys.txt
       - ./apikeys.txt:/app/apikeys.txt:ro
 
     # Container hardening. Chromium runs with --no-sandbox (its own sandbox needs
