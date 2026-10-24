@@ -842,10 +842,29 @@ const redis = new Redis(process.env.REDIS_URL);
 
 `html` is rendered by a real browser inside your network, so a page can request any address the container can reach: cloud metadata (`169.254.169.254`), sidecars, other internal services, and the container's own loopback. ViewSarn blocks these at the application layer:
 
-- Every request a page makes is checked. Loopback, private (RFC 1918), link-local, carrier-grade NAT and the IPv6 equivalents are refused, as is any scheme other than `http`, `https`, `data`, `about` and `blob` (so `file:` is out). Redirects are checked at each hop. A DNS failure is a refusal.
-- `EGRESS_ALLOW` opens named destinations: a comma-separated list of hostnames, IP addresses and CIDRs, for example `EGRESS_ALLOW=assets.internal.example,10.20.0.0/16`. A CIDR applies to the addresses a hostname resolves to.
+- Every request a page makes is checked. Loopback, private (RFC 1918), link-local, carrier-grade NAT and the IPv6 equivalents are refused, as is any scheme other than `http`, `https`, `data`, `about` and `blob` (so `file:` is out). WebSockets get the same check. Redirects are checked at each hop: the filter follows them itself, up to 5, because Chromium routes only the first URL of a redirect chain. A redirected response reaches the page under the first URL, so relative URLs inside a redirected stylesheet or frame resolve against that URL; link assets by their final address. A DNS failure is a refusal. Allowed responses are fetched by the Playwright process and handed to Chromium whole, so a very large asset costs its full size in memory until the render ends.
+- `EGRESS_ALLOW` opens named destinations: a comma-separated list of hostnames, IP addresses and CIDRs, for example `EGRESS_ALLOW=assets.internal.example,10.20.0.0/16`. A CIDR applies to the addresses a hostname resolves to. A malformed CIDR stops the service at startup with an error naming `EGRESS_ALLOW`.
 
-This filter is a second layer, not the boundary. The hostname is resolved once by ViewSarn and again by Chromium, so a DNS server that changes its answer between the two (rebinding) can slip past it, and WebSocket traffic is not intercepted. The boundary is a network rule: deny the metadata address and private ranges for this container, for example an egress-restricted Docker network or a Kubernetes `NetworkPolicy`.
+This filter is a second layer, not the boundary. The hostname is resolved once for the check and again when the request is made, so a DNS server that changes its answer between the two (rebinding) can slip past it. The boundary is a network rule: deny the metadata address and private ranges for this container, for example an egress-restricted Docker network or a Kubernetes `NetworkPolicy`.
+
+A Compose example for documents that need no remote assets (fonts are baked into the image): the service sits on a network with no route out, and only the reverse proxy bridges it to the outside.
+
+```yaml
+services:
+  playwright-render:
+    networks: [internal]        # no port published, no route out
+  nginx:
+    image: nginx:1.27
+    ports: ["443:443"]
+    networks: [internal, outside]
+
+networks:
+  internal:
+    internal: true              # Docker adds no route out of this network
+  outside: {}
+```
+
+With `internal: true` the render container cannot reach the metadata address, the host or the internet, whatever the page asks for. If documents do load remote assets, keep the default network and enforce the deny rules on the host firewall or in the orchestrator instead.
 
 Chromium runs with `--no-sandbox`. Its own sandbox does not start under Docker's default seccomp profile, and the two ways to get it (`--cap-add SYS_ADMIN`, or `seccomp=unconfined`) loosen the container more than they protect it. The compose file therefore drops all capabilities, sets `no-new-privileges`, and mounts the root filesystem read-only with a `/tmp` tmpfs; the Thai PDF, PNG and `save` paths were checked against those settings.
 
@@ -924,7 +943,7 @@ healthcheck:
 
 Create `apikeys.txt` before the first `docker compose up`: if the file is missing, Docker makes a directory at that path and the service exits at startup with a message saying so. Set `AUTH_DISABLED=true` only for a deployment that must run with no keys.
 
-Queued requests also expire: after `RENDER_QUEUE_WAIT_MS` (default 30000) a waiting request gets `503`. `MAX_INFLIGHT_PER_KEY` (default 0, off) caps the renders one key may have running or queued; set it on shared deployments. `MAX_PNG_PIXELS` (25,000,000) and `MAX_PDF_PAGES` (200) refuse oversize output with `413`. Measured in the image: a full-page PNG costs about 22 bytes per device pixel over a ~150 MB idle browser (243 MB at 3M pixels, 1005 MB at 39M), so keep `RENDER_CONCURRENCY` x `MAX_PNG_PIXELS` x 22 bytes plus 150 MB under the container limit. The page ceiling is not measured. `/health` returns `503` when Chromium has disconnected, so the container healthcheck restarts it; `AUTH_FAIL_MAX` (default 30) and `SHUTDOWN_TIMEOUT_MS` (default 10000) round out the new settings.
+Queued requests also expire: after `RENDER_QUEUE_WAIT_MS` (default 30000) a waiting request gets `503`. `MAX_INFLIGHT_PER_KEY` (default 0, off) caps the renders one key may have running or queued; set it on shared deployments. `MAX_PNG_PIXELS` (25,000,000) and `MAX_PDF_PAGES` (200) refuse oversize output with `413`. Measured in the image: a full-page PNG costs about 22 bytes per device pixel over a ~150 MB idle browser (243 MB at 3M pixels, 1005 MB at 39M), so keep `RENDER_CONCURRENCY` x `MAX_PNG_PIXELS` x 22 bytes plus 150 MB under the container limit. The page ceiling is not measured. `/health` returns `503` when Chromium has disconnected, so the container healthcheck restarts it; `AUTH_FAIL_MAX` (default 30) and `SHUTDOWN_TIMEOUT_MS` (default 10000) round out the new settings. `OUTPUT_MAX_BYTES` (default 0, off) caps the bytes one key may keep under `OUTPUT_DIR`; a save past it gets `507`. The service never deletes saved files, so set it, or clean the directory on a schedule, on shared deployments.
 
 `/health` itself needs no API key — it is exempt from the auth middleware — so Kubernetes `httpGet` probes and load balancer checks work unmodified.
 

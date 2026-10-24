@@ -70,7 +70,7 @@ jobs:
         run: docker run -d --name viewsarn-smoke -p 3000:3000 -e API_KEY=ci-key viewsarn:ci
 
       - name: Smoke render (Thai PDF and PNG, fonts)
-        run: node scripts/smoke.mjs http://127.0.0.1:3000 ci-key --container viewsarn-smoke
+        run: node scripts/smoke.js http://127.0.0.1:3000 ci-key --container viewsarn-smoke
 
       # The image holds only server.js and src/, so mount the tests read-only.
       - name: Real-browser tests

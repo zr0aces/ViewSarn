@@ -148,6 +148,9 @@ test('wrong keys past AUTH_FAIL_MAX get 429, and a correct key from the same IP 
     assert.equal(blocked.status, 429);
     assert.ok(blocked.headers.get('retry-after'));
     assert.equal((await post(s.url, html)).status, 200, 'a valid key is never throttled by failed attempts');
+    const metrics = await (await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).text();
+    assert.match(metrics, /viewsarn_unauthorized_total 3\n/, 'the 429 is not also counted as a 401');
+    assert.match(metrics, /viewsarn_rate_limited_total 1\n/);
   } finally { await s.close(); }
 });
 
@@ -158,6 +161,7 @@ test('F-01: the API key never reaches the logs', async () => {
   try {
     await post(s.url, html);
     assert.doesNotMatch(JSON.stringify(s.logs), /k1/);
+    assert.doesNotMatch(JSON.stringify(s.logs), /digest-of-k/, 'nor the full key digest');
     assert.ok(s.logs.some(l => l.auth === 'abc123def456'), 'the key label is logged instead');
   } finally { await s.close(); }
 });

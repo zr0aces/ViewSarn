@@ -55,3 +55,10 @@ Commit: `test: deterministic rate-limit clock, Chromium-shaped failures, browser
 - Trivy noise from base-image CVEs: `ignore-unfixed`; review exceptions in PRs.
 - Digest pins go stale; Dependabot opens the bump PRs.
 - Revert per job.
+
+## EXECUTE notes (2026-10-24, recorded 2026-10-25)
+
+- The `image` job passed on GitHub on PR #5 and PR #15. It was not run against a deliberately broken Dockerfile or a removed font; the smoke script's font check was exercised locally against the image only.
+- "Publish does not push `latest` if smoke or scan fails" is verified by reading `docker-publish.yml` only: the smoke and Trivy steps run before the push step in the same job, so a failure stops the job before the push. No fork dry-run was done.
+- `test/rateLimit.test.js` uses `mock.timers`; no real-timer assertions remain.
+- `scripts/smoke.mjs` became `scripts/smoke.js` (CommonJS) after the code review: the `.mjs` exception in `CLAUDE.md` covers release tooling only.

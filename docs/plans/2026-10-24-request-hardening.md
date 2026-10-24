@@ -103,3 +103,8 @@ Commit: `fix(http): JSON 404 and accurate body-parser errors`.
 - API-visible (decision 4): clients that read saved files by old absolute path break; stricter `png`/`single` rejects string values. Release note.
 - Visible output change: a numeric `margin` (or unit-less string) was applied as pixels by `page.pdf` but as mm by the scale maths. After step 1 it is real mm, so a caller that sends `margin: 10` now gets about 10 mm instead of about 2.6 mm and the layout shifts. Release note.
 - Revert per commit.
+
+## EXECUTE notes (2026-10-24, recorded 2026-10-25)
+
+- Every acceptance item has a test: Thai filename, `png: "false"` and object `outPath` in `test/app.test.js` and `test/validate.test.js`; traversal, absolute path, symlink escape, per-key directories and relative paths in `test/save.test.js`; JSON 404 in `test/app.test.js`. Thai filename and `save` were also checked against the image.
+- Step 2 specified `parseMarginToMm(opts.margin ?? '10mm')`, but the code kept `||`, so `margin: 0` still became 10mm. The code review of PR #5 caught it; fixed, with a test in `test/browserLifecycle.test.js`.

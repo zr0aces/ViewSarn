@@ -67,7 +67,7 @@ jobs:
       - name: Smoke render
         run: |
           docker run -d --name viewsarn-smoke -p 3000:3000 -e API_KEY=ci-key viewsarn:release-candidate
-          node scripts/smoke.mjs http://127.0.0.1:3000 ci-key --container viewsarn-smoke
+          node scripts/smoke.js http://127.0.0.1:3000 ci-key --container viewsarn-smoke
 
       - name: Scan image for known vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

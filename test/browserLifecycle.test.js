@@ -49,7 +49,7 @@ test('a client that disconnects mid-render frees the slot and closes the context
   await new Promise(resolve => setTimeout(resolve, 20));
   controller.abort();
   await assert.rejects(() => pending, (err) => err.status === 499);
-  assert.deepEqual(r._inFlight(), { active: 0, waiting: 0 });
+  assert.deepEqual(r.inFlight(), { active: 0, waiting: 0 });
   assert.equal(state.contexts[0].closed, true);
 });
 
@@ -58,6 +58,7 @@ test('a context.close() that never returns does not pin the slot forever', async
     env: { RENDER_CONCURRENCY: '1' },
     newContext: async () => ({
       route: async () => {},
+      routeWebSocket: async () => {},
       close: () => new Promise(() => {}),
       newPage: async () => ({
         setContent: async () => {},
@@ -69,7 +70,7 @@ test('a context.close() that never returns does not pin the slot forever', async
   const started = Date.now();
   await render(r);
   assert.ok(Date.now() - started < 8000, 'close is bounded by CONTEXT_CLOSE_TIMEOUT_MS');
-  assert.deepEqual(r._inFlight(), { active: 0, waiting: 0 });
+  assert.deepEqual(r.inFlight(), { active: 0, waiting: 0 });
 });
 
 test('a PNG over MAX_PNG_PIXELS is refused with 413 before any viewport change', async () => {
@@ -86,7 +87,7 @@ test('a PNG over MAX_PNG_PIXELS is refused with 413 before any viewport change',
     (err) => err.status === 413
   );
   assert.equal(viewportCalls, 0);
-  assert.deepEqual(r._inFlight(), { active: 0, waiting: 0 });
+  assert.deepEqual(r.inFlight(), { active: 0, waiting: 0 });
 });
 
 test('a PDF over MAX_PDF_PAGES is refused with 413', async () => {
@@ -111,8 +112,8 @@ test('a queued request that waits past RENDER_QUEUE_WAIT_MS gets 503 and leaves 
   const first = render(r).catch(() => {});
   await new Promise(resolve => setTimeout(resolve, 20));
   await assert.rejects(() => render(r), (err) => err.status === 503 && /slot/.test(err.message));
-  assert.equal(r._inFlight().waiting, 0);
-  assert.equal(r._inFlight().active, 1);
+  assert.equal(r.inFlight().waiting, 0);
+  assert.equal(r.inFlight().active, 1);
   void first;
 });
 
@@ -125,15 +126,17 @@ test('page.pdf gets the same millimetres the scale maths used, for a numeric mar
   assert.equal(pdfArgs.margin.top, '10mm');
   await render(r, {});
   assert.equal(pdfArgs.margin.top, '10mm');
+  await render(r, { margin: 0 });
+  assert.equal(pdfArgs.margin.top, '0mm', 'a margin of 0 is no margin, not the default');
 });
 
 test('Chromium-shaped failures surface as 500 and always release the slot', async () => {
   const closedBrowser = loadRender({ newContext: async () => { throw new Error('Target page, context or browser has been closed'); } });
   await assert.rejects(() => render(closedBrowser.render), (err) => !err.status || err.status === 500);
-  assert.deepEqual(closedBrowser.render._inFlight(), { active: 0, waiting: 0 });
+  assert.deepEqual(closedBrowser.render.inFlight(), { active: 0, waiting: 0 });
 
   const pdfFails = loadRender({ page: { pdf: async () => { throw new Error('Protocol error (Page.printToPDF): Target closed'); } } });
   await assert.rejects(() => render(pdfFails.render), /Target closed/);
-  assert.deepEqual(pdfFails.render._inFlight(), { active: 0, waiting: 0 });
+  assert.deepEqual(pdfFails.render.inFlight(), { active: 0, waiting: 0 });
   assert.equal(pdfFails.state.contexts[0].closed, true, 'the context is closed even though the render failed');
 });

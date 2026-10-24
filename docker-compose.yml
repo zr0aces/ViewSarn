@@ -79,6 +79,11 @@ services:
       # Wrong keys tolerated per IP per window before a 429.
       - AUTH_FAIL_MAX=30
 
+      # Private, loopback and link-local destinations stay reachable from
+      # rendered HTML only if named here: hostnames, IPs, CIDRs, comma-separated.
+      # Empty blocks them all, including the cloud metadata address.
+      - EGRESS_ALLOW=
+
       # Seconds-scale ceiling for graceful shutdown before a forced exit.
       - SHUTDOWN_TIMEOUT_MS=10000
 

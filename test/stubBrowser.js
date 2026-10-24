@@ -1,8 +1,9 @@
 const Module = require('node:module');
+const { loadFreshModules } = require('./helpers');
 
-// Loads src/render.js against a fake Playwright. Unlike the stub inside
-// renderTimeout.test.js, the fake browser can be disconnected and records every
-// launch, so tests can drive crash recovery and shutdown.
+// Loads src/render.js against a fake Playwright. The fake browser can be
+// disconnected and records every launch and context, so tests can drive crash
+// recovery, shutdown, deadlines and cleanup.
 function loadRender({ env = {}, page = {}, newContext, launchError } = {}) {
   const state = { launches: 0, contexts: [], browsers: [] };
 
@@ -12,6 +13,8 @@ function loadRender({ env = {}, page = {}, newContext, launchError } = {}) {
       close: async () => { context.closed = true; },
       routes: [],
       route: async (pattern, handler) => { context.routes.push({ pattern, handler }); },
+      routeWebSocket: async (pattern, handler) => { context.wsRoutes.push({ pattern, handler }); },
+      wsRoutes: [],
       newPage: async () => ({
         setContent: async () => {},
         evaluate: async () => ({ width: 800, height: 600 }),
@@ -46,13 +49,6 @@ function loadRender({ env = {}, page = {}, newContext, launchError } = {}) {
     }
   };
 
-  const previous = { LOG_LEVEL: process.env.LOG_LEVEL };
-  for (const key of Object.keys(env)) previous[key] = process.env[key];
-  Object.assign(process.env, env);
-  process.env.LOG_LEVEL = 'silent';
-  for (const mod of ['../src/config', '../src/logger', '../src/limits', '../src/egress', '../src/render']) {
-    delete require.cache[require.resolve(mod)];
-  }
   const originalLoad = Module._load;
   Module._load = function (request) {
     if (request === 'playwright') return stub;
@@ -60,12 +56,10 @@ function loadRender({ env = {}, page = {}, newContext, launchError } = {}) {
   };
   let render;
   try {
-    render = require('../src/render');
+    // limits and egress are listed only so their cache is cleared too.
+    render = loadFreshModules(env, ['../src/limits', '../src/egress', '../src/render']).at(-1);
   } finally {
     Module._load = originalLoad;
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
   }
   return { render, state };
 }

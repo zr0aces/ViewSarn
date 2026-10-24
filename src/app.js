@@ -1,16 +1,11 @@
 const express = require('express');
-const path = require('path');
-const fs = require('fs').promises;
 const crypto = require('crypto');
 const { contentDisposition } = require('./contentDisposition');
 const { saveBuffer } = require('./save');
+const { sendError } = require('./httpErrors');
 
-// Ensure output dir exists
-async function ensureDir(dir, logger) {
-    try { await fs.mkdir(dir, { recursive: true }); } catch (e) {
-        if (e.code !== 'EEXIST') logger.error({ err: e, dir }, 'Error ensuring dir');
-    }
-}
+// /convert failures that are load signals, and the counter each one feeds.
+const LOAD_COUNTERS = { 413: 'oversize', 503: 'rejected', 504: 'timeouts' };
 
 // Builds the Express app from injected collaborators, so tests can drive the
 // whole HTTP layer without a browser, a real keys file, or a bound port.
@@ -72,27 +67,29 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
         // when the service itself runs without keys.
         const skipAuth = req.path === '/health' || (req.path === '/metrics' && !auth.authConfigured());
 
+        // One client identity for both the failed-key bucket and the anonymous principal.
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const { valid, principal } = skipAuth ? { valid: true, principal: null } : auth.validateAuth(req);
 
         metrics.requests += 1;
 
         if (!valid) {
-            metrics.unauthorized += 1;
             // Wrong keys are counted per IP, after validation: a valid key always
             // passes, so one noisy client behind a shared proxy IP cannot lock out
             // good ones. Past the budget the answer changes from 401 to 429.
-            const fail = limiter.isRateLimitedFor(`authfail:${req.ip || req.connection.remoteAddress || 'unknown'}`, AUTH_FAIL_MAX);
+            const fail = limiter.isRateLimitedFor(`authfail:${clientIp}`, AUTH_FAIL_MAX);
             if (fail.limited) {
                 res.setHeader('Retry-After', String(Math.ceil(fail.resetMs / 1000)));
                 metrics.rateLimited += 1;
-                return res.status(429).json({ error: 'Too many failed authentication attempts', retry_after_seconds: Math.ceil(fail.resetMs / 1000), request_id: req.requestId });
+                return sendError(req, res, 429, 'Too many failed authentication attempts', { retry_after_seconds: Math.ceil(fail.resetMs / 1000) });
             }
+            metrics.unauthorized += 1;
             res.set('WWW-Authenticate', 'Bearer realm="PlaywrightRender"');
-            return res.status(401).json({ error: 'Unauthorized', request_id: req.requestId });
+            return sendError(req, res, 401, 'Unauthorized');
         }
 
         // A keyed caller is limited and logged by its principal; everyone else by IP.
-        req.principal = principal || { id: req.ip || req.connection.remoteAddress || 'unknown', label: 'anon' };
+        req.principal = principal || { id: clientIp, label: 'anon' };
 
         // apply rate limit
         const rl = limiter.isRateLimitedFor(req.principal.id);
@@ -104,7 +101,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
         if (rl.limited) {
             res.setHeader('Retry-After', String(Math.ceil(rl.resetMs / 1000)));
             metrics.rateLimited += 1;
-            return res.status(429).json({ error: 'Rate limit exceeded', retry_after_seconds: Math.ceil(rl.resetMs / 1000), request_id: req.requestId });
+            return sendError(req, res, 429, 'Rate limit exceeded', { retry_after_seconds: Math.ceil(rl.resetMs / 1000) });
         }
 
         next();
@@ -116,22 +113,14 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             const body = req.body || {};
             const html = body.html;
             if (!html || typeof html !== 'string') {
-                return res.status(400).json({ error: 'Missing "html" (string)', request_id: req.requestId });
+                return sendError(req, res, 400, 'Missing "html" (string)');
             }
 
             const invalid = validate.validateBody(body) || validate.validateOptions(body.options);
-            if (invalid) return res.status(400).json({ error: invalid, request_id: req.requestId });
+            if (invalid) return sendError(req, res, 400, invalid);
 
-            const options = Object.assign({
-                format: 'A4',
-                orientation: 'portrait',
-                margin: '10mm',
-                single: false,
-                scale: null,
-                png: false,
-                dpi: 96,
-                filename: null
-            }, body.options || {});
+            // Defaults for format, margin, dpi and the rest live in render.js.
+            const options = body.options || {};
 
             // One caller must not hold every slot. Off by default (0) so a batch
             // caller still queues; shared deployments opt in.
@@ -140,7 +129,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
                 if ((inflight.get(callerId) || 0) >= MAX_INFLIGHT_PER_KEY) {
                     metrics.perKeyLimited += 1;
                     res.setHeader('Retry-After', '5');
-                    return res.status(429).json({ error: 'Too many renders in flight for this key', request_id: req.requestId });
+                    return sendError(req, res, 429, 'Too many renders in flight for this key');
                 }
                 inflight.set(callerId, (inflight.get(callerId) || 0) + 1);
                 res.on('close', () => {
@@ -207,7 +196,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             // 499 means the client already hung up. There is nobody to answer, and
             // writing to a closed socket only produces a second error.
             if (status === 499) {
-                logger.debug({ requestId: req.requestId }, 'Client disconnected before the render started');
+                logger.debug({ requestId: req.requestId }, 'Client disconnected before the render finished');
                 return;
             }
             // Not `msg`: pino uses that key for the message itself, so passing it here
@@ -216,9 +205,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
                 metrics.failures += 1;
                 logger.error({ err, requestId: req.requestId }, 'Error in /convert');
             } else {
-                if (status === 503) metrics.rejected += 1;
-                if (status === 413) metrics.oversize += 1;
-                if (status === 504) metrics.timeouts += 1;
+                if (LOAD_COUNTERS[status]) metrics[LOAD_COUNTERS[status]] += 1;
                 logger.warn({ status, reason: err.message, requestId: req.requestId }, 'Render not completed');
             }
             if (status === 503) res.setHeader('Retry-After', '5');
@@ -226,13 +213,13 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             // whatever Chromium or the filesystem produced — internal detail the
             // caller cannot act on. It goes to the log, with the id to correlate.
             const error = status === 500 ? 'Internal render error' : err.message;
-            return res.status(status).json({ error, request_id: req.requestId });
+            return sendError(req, res, status, error);
         }
     });
 
     if (METRICS_ENABLED) {
-        // Prometheus text exposition. Hand-rolled: six counters do not justify a
-        // dependency. Requires a key whenever auth is configured, and is rate limited like every route.
+        // Prometheus text exposition. Hand-rolled: a handful of counters and gauges
+        // do not justify a dependency. Requires a key whenever auth is configured, and is rate limited like every route.
         app.get('/metrics', (req, res) => {
             const inFlight = render.inFlight();
             const lines = [
@@ -264,10 +251,10 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
         rate_limit_max: RATE_LIMIT_MAX
     }));
 
-    app.use((req, res) => res.status(404).json({ error: 'Not found', request_id: req.requestId }));
+    app.use((req, res) => sendError(req, res, 404, 'Not found'));
     app.use(httpErrors.finalErrorHandler({ logger }));
 
     return { app, metrics };
 }
 
-module.exports = { createApp, ensureDir };
+module.exports = { createApp };

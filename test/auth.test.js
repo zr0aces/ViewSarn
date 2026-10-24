@@ -169,3 +169,22 @@ test('AUTH_DISABLED ignores a rotating X-API-Key: one rate-limit bucket, not one
     assert.equal(limiter._size(), 1);
   } finally { await s.close(); }
 });
+
+test('R-2.7: keys are compared as digests, so any key length is rejected cleanly and the principal never holds the key', () => {
+  const crypto = require('node:crypto');
+  const auth = loadFreshAuthModule({
+    API_KEY: 'sample-key',
+    API_KEYS_FILE: path.join(__dirname, 'missing-apikeys.txt'),
+    API_KEYS_RELOAD_MS: '1000'
+  });
+
+  // crypto.timingSafeEqual throws on a length mismatch; digests make every length safe.
+  for (const key of ['s', 'sample-ke', 'sample-key!', 'x'.repeat(10000)]) {
+    assert.equal(auth.validateAuth(makeRequest({ authorization: `Bearer ${key}` })).valid, false, `length ${key.length}`);
+  }
+
+  const { principal } = auth.validateAuth(makeRequest({ 'x-api-key': 'sample-key' }));
+  const hex = crypto.createHash('sha256').update('sample-key').digest('hex');
+  assert.deepEqual(principal, { id: `k:${hex}`, label: hex.slice(0, 12) });
+  assert.doesNotMatch(JSON.stringify(principal), /sample-key/);
+});
