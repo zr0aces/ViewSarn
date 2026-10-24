@@ -18,7 +18,7 @@ async function ensureDir(dir, logger) {
 //   limiter    = { isRateLimitedFor }
 //   render     = { renderHtmlToBuffer, inFlight, browserReady }
 //   validate   = { validateOptions, validateBody }
-//   httpErrors = { bodyErrorHandler }
+//   httpErrors = { bodyErrorHandler, finalErrorHandler }
 function createApp({ config, logger, auth, limiter, render, validate, httpErrors }) {
     const { OUTPUT_DIR, OUTPUT_MAX_BYTES = 0, AUTH_FAIL_MAX, MAX_INFLIGHT_PER_KEY = 0, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
 
@@ -263,6 +263,9 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
         rate_limit_window_ms: RATE_LIMIT_WINDOW_MS,
         rate_limit_max: RATE_LIMIT_MAX
     }));
+
+    app.use((req, res) => res.status(404).json({ error: 'Not found', request_id: req.requestId }));
+    app.use(httpErrors.finalErrorHandler({ logger }));
 
     return { app, metrics };
 }

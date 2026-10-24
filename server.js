@@ -3,7 +3,7 @@ const config = require('./src/config');
 const logger = require('./src/logger');
 const { createApp, ensureDir } = require('./src/app');
 const { validateOptions, validateBody } = require('./src/validate');
-const { bodyErrorHandler } = require('./src/httpErrors');
+const { bodyErrorHandler, finalErrorHandler } = require('./src/httpErrors');
 const fs = require('fs');
 const { validateAuth, authConfigured, isAuthFileInUse } = require('./src/auth');
 const { isRateLimitedFor } = require('./src/rateLimit');
@@ -34,7 +34,7 @@ async function main() {
     limiter: { isRateLimitedFor },
     render: { renderHtmlToBuffer, inFlight: _inFlight, browserReady },
     validate: { validateOptions, validateBody },
-    httpErrors: { bodyErrorHandler }
+    httpErrors: { bodyErrorHandler, finalErrorHandler }
   });
 
   const server = app.listen(PORT, () => {

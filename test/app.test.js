@@ -182,7 +182,7 @@ test('F-10: a non-string outPath is a 400', async () => {
   } finally { await s.close(); }
 });
 
-test('F-14: an unknown route is a JSON 404', { todo: 'F-14 plan 04' }, async () => {
+test('F-14: an unknown route is a JSON 404', async () => {
   const s = await boot();
   try {
     const r = await fetch(`${s.url}/nope`, { headers: { Authorization: 'Bearer k1' } });
@@ -269,5 +269,38 @@ test('save: traversal is a 400 and writes nothing outside the caller directory',
     assert.equal(fs.existsSync(path.join(s.outputDir, '..', 'escape.pdf')), false);
     const bad = await post(s.url, { ...html, save: 'false' });
     assert.equal(bad.status, 400);
+  } finally { await s.close(); }
+});
+
+test('unsupported charset and content-encoding are 415 with their own message', async () => {
+  const s = await boot();
+  try {
+    const charset = await fetch(`${s.url}/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=iso-8859-1', Authorization: 'Bearer k1' },
+      body: JSON.stringify(html)
+    });
+    assert.equal(charset.status, 415);
+    assert.match((await charset.json()).error, /charset/i);
+
+    const encoding = await fetch(`${s.url}/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'compress', Authorization: 'Bearer k1' },
+      body: JSON.stringify(html)
+    });
+    assert.equal(encoding.status, 415);
+    assert.match((await encoding.json()).error, /Content-Encoding/);
+  } finally { await s.close(); }
+});
+
+test('an unexpected throw outside /convert is still JSON', async () => {
+  const s = await boot({ auth: { isAuthFileInUse: () => { throw new Error('boom'); } } });
+  try {
+    const r = await fetch(`${s.url}/health`);
+    assert.equal(r.status, 500);
+    assert.match(r.headers.get('content-type'), /json/);
+    const body = await r.json();
+    assert.equal(body.error, 'Internal server error');
+    assert.ok(body.request_id);
   } finally { await s.close(); }
 });

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const pino = require('pino');
 const { validateOptions, validateBody } = require('../src/validate');
-const { bodyErrorHandler } = require('../src/httpErrors');
+const { bodyErrorHandler, finalErrorHandler } = require('../src/httpErrors');
 const { createApp } = require('../src/app');
 
 async function start(app) {
@@ -70,7 +70,7 @@ function makeDeps(over = {}) {
       ...over.render
     },
     validate: { validateOptions, validateBody },
-    httpErrors: { bodyErrorHandler }
+    httpErrors: { bodyErrorHandler, finalErrorHandler }
   };
   return { deps, logs, outputDir };
 }
