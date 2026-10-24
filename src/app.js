@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
+const { contentDisposition } = require('./contentDisposition');
 
 // Ensure output dir exists
 async function ensureDir(dir, logger) {
@@ -167,15 +168,18 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
                 await render.renderHtmlToBuffer(html, options, { signal: disconnected.signal });
             const duration = Date.now() - start;
 
-            // log basic info
-            metrics.renders += 1;
-            logger.info({
-                requestId: req.requestId,
-                auth: req.principal.label,
-                size: buffer.length,
-                mode: options.png ? 'png' : 'pdf',
-                duration: `${duration}ms`
-            }, 'Convert request completed');
+            // Count and log only once the response has gone out: a header or write
+            // failure after the render must not be reported as a success.
+            res.on('finish', () => {
+                metrics.renders += 1;
+                logger.info({
+                    requestId: req.requestId,
+                    auth: req.principal.label,
+                    size: buffer.length,
+                    mode: options.png ? 'png' : 'pdf',
+                    duration: `${duration}ms`
+                }, 'Convert request completed');
+            });
 
             const ext = options.png ? 'png' : 'pdf';
             const filename = options.filename ? options.filename : `output-${Date.now()}.${ext}`;
@@ -195,7 +199,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
 
             res.setHeader('Content-Type', options.png ? 'image/png' : 'application/pdf');
             res.setHeader('Content-Length', buffer.length);
-            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            res.setHeader('Content-Disposition', contentDisposition(filename));
             // buffer is already a Buffer; Buffer.from would copy every rendered byte.
             return res.send(buffer);
         } catch (err) {

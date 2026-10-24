@@ -90,7 +90,7 @@ test('success response carries the pdf and the request id', async () => {
     const r = await post(s.url, { ...html, options: { filename: 'a.pdf' } }, { 'X-Request-Id': 'trace-1' });
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('content-type'), 'application/pdf');
-    assert.equal(r.headers.get('content-disposition'), 'attachment; filename="a.pdf"');
+    assert.equal(r.headers.get('content-disposition'), 'attachment; filename="a.pdf"; filename*=UTF-8\'\'a.pdf');
     assert.equal(r.headers.get('x-request-id'), 'trace-1');
     assert.equal(Buffer.from(await r.arrayBuffer()).toString(), '%PDF-stub');
   } finally { await s.close(); }
@@ -162,11 +162,15 @@ test('F-01: the API key never reaches the logs', async () => {
   } finally { await s.close(); }
 });
 
-test('F-08: a Thai filename is served', { todo: 'F-08 plan 04' }, async () => {
+test('F-08: a Thai filename is served', async () => {
   const s = await boot();
   try {
     const r = await post(s.url, { ...html, options: { filename: 'รายงาน.pdf' } });
     assert.equal(r.status, 200);
+    const header = r.headers.get('content-disposition');
+    assert.match(header, /filename="___+\.pdf"/);
+    assert.match(header, /filename\*=UTF-8''%E0%B8%A3/);
+    assert.equal(decodeURIComponent(header.split("UTF-8''")[1]), 'รายงาน.pdf');
   } finally { await s.close(); }
 });
 
@@ -236,5 +240,22 @@ test('a 413 render error is counted as oversize', async () => {
   try {
     assert.equal((await post(s.url, html)).status, 413);
     assert.match(await (await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).text(), /viewsarn_render_oversize_total 1/);
+  } finally { await s.close(); }
+});
+
+test('a quote in filename is refused, not injected into the header', async () => {
+  const s = await boot();
+  try {
+    const r = await post(s.url, { ...html, options: { filename: 'a"; x="b.pdf' } });
+    assert.equal(r.status, 400);
+  } finally { await s.close(); }
+});
+
+test('a render that fails after the work is not counted as a success', async () => {
+  const s = await boot({ render: { renderHtmlToBuffer: async () => { throw new Error('boom'); } } });
+  try {
+    await post(s.url, html);
+    assert.match(await (await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).text(), /viewsarn_renders_total 0/);
+    assert.equal(s.logs.filter(l => l.msg === 'Convert request completed').length, 0);
   } finally { await s.close(); }
 });
