@@ -27,3 +27,15 @@ test('startup explains a keys path that is a directory', () => {
   assert.equal(r.status, 1);
   assert.match(r.stdout + r.stderr, /is a directory/);
 });
+
+test('a browser that cannot launch is a clean fatal exit, not an unhandled rejection', () => {
+  const r = spawnSync(process.execPath, ['-r', path.join(__dirname, 'fixtures', 'failingPlaywright.js'), path.join(__dirname, '..', 'server.js')], {
+    env: { PATH: process.env.PATH, NODE_ENV: 'production', LOG_LEVEL: 'info', OUTPUT_DIR: os.tmpdir(), PORT: '0', API_KEY: 'k' },
+    encoding: 'utf8',
+    timeout: 15_000
+  });
+  assert.equal(r.status, 1);
+  const out = r.stdout + r.stderr;
+  assert.match(out, /Startup failed/);
+  assert.doesNotMatch(out, /unhandled/i);
+});

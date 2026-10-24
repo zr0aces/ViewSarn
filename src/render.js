@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
-const { RENDER_CONCURRENCY, RENDER_QUEUE_MAX, RENDER_TIMEOUT_MS } = require('./config');
+const { RENDER_CONCURRENCY, RENDER_QUEUE_MAX, RENDER_QUEUE_WAIT_MS, RENDER_TIMEOUT_MS, MAX_PNG_PIXELS, MAX_PDF_PAGES } = require('./config');
+const { pngPixels, pdfPages } = require('./limits');
 const logger = require('./logger');
 
 const PAPER_SIZES = {
@@ -12,26 +13,48 @@ const WAIT_UNTIL = new Set(['load', 'domcontentloaded', 'networkidle', 'commit']
 const PX_PER_MM = 96 / 25.4;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 2;
+// A wedged context.close() must not pin a render slot for good.
+const CONTEXT_CLOSE_TIMEOUT_MS = 5000;
 
-let browser;
+let browser = null;
+let launching = null;
+let closing = false;
 
-async function initBrowser() {
-    if (!browser) {
+// One browser for the whole process. A dead one (OOM kill, renderer crash) is
+// replaced on the next request, and concurrent callers share a single launch.
+async function getBrowser() {
+    if (closing) throw httpError(503, 'Service is shutting down');
+    if (browser && browser.isConnected()) return browser;
+    if (!launching) {
         logger.info('Launching Playwright browser...');
-        browser = await chromium.launch({
+        launching = chromium.launch({
             args: ['--no-sandbox', '--disable-setuid-sandbox'],
             headless: true
-        });
-        logger.info({ concurrency: RENDER_CONCURRENCY }, 'Browser launched.');
+        }).then((launched) => {
+            browser = launched;
+            launched.on('disconnected', () => {
+                if (browser === launched) browser = null;
+                logger.warn('Browser disconnected');
+            });
+            logger.info({ concurrency: RENDER_CONCURRENCY }, 'Browser launched.');
+            return launched;
+        }).finally(() => { launching = null; });
     }
-    return browser;
+    return launching;
 }
 
+const initBrowser = getBrowser;
+
+const browserReady = () => !!browser && browser.isConnected();
+
 async function closeBrowser() {
+    closing = true;
+    if (launching) await launching.catch(() => {});
     if (browser) {
         logger.info('Closing Playwright browser...');
-        await browser.close();
+        const current = browser;
         browser = null;
+        await current.close();
         logger.info('Browser closed.');
     }
 }
@@ -62,12 +85,24 @@ function acquireSlot(signal) {
     // slot producing output nobody reads, and delays the callers behind it.
     return new Promise((resolve, reject) => {
         const entry = {};
-        const onAbort = () => {
+        const leaveQueue = () => {
+            clearTimeout(waitTimer);
             const index = waiting.indexOf(entry);
             if (index !== -1) waiting.splice(index, 1);
+        };
+        const onAbort = () => {
+            leaveQueue();
             reject(httpError(499, 'Client closed the request'));
         };
+        // Waiting forever behind slow renders helps nobody: the caller's proxy has
+        // usually given up long before the queue drains.
+        const waitTimer = setTimeout(() => {
+            leaveQueue();
+            if (signal) signal.removeEventListener('abort', onAbort);
+            reject(httpError(503, 'Timed out waiting for a render slot'));
+        }, RENDER_QUEUE_WAIT_MS);
         entry.resolve = () => {
+            clearTimeout(waitTimer);
             if (signal) signal.removeEventListener('abort', onAbort);
             resolve();
         };
@@ -95,8 +130,21 @@ function clamp(s) {
     return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 }
 
+function closeContext(context) {
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(resolve, CONTEXT_CLOSE_TIMEOUT_MS); });
+    return Promise.race([context.close().catch(() => {}), timeout]).finally(() => clearTimeout(timer));
+}
+
 async function renderHtmlToBuffer(html, opts, { signal } = {}) {
-    const b = await initBrowser();
+    let b;
+    try {
+        b = await getBrowser();
+    } catch (err) {
+        if (err.status) throw err;
+        logger.error({ err }, 'Browser launch failed');
+        throw httpError(503, 'Browser unavailable, retry shortly');
+    }
     await acquireSlot(signal);
 
     const isPng = !!opts.png;
@@ -164,6 +212,9 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
             const targetHeight = opts.single
                 ? Math.max(1, Math.ceil(contentSize.height * scale))
                 : Math.max(1, Math.ceil(availableHeightPx));
+            if (pngPixels({ contentSize, targetWidth, targetHeight, single: !!opts.single, dsf: dpi / 96 }) > MAX_PNG_PIXELS) {
+                throw httpError(413, 'Rendered image would exceed the size limit');
+            }
             try {
                 await page.setViewportSize({ width: targetWidth, height: targetHeight });
             } catch (e) {
@@ -171,6 +222,9 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
             }
             buffer = await page.screenshot({ type: 'png', fullPage: !!opts.single });
         } else {
+            if (pdfPages({ contentHeight: contentSize.height, scale, availableHeightPx }) > MAX_PDF_PAGES) {
+                throw httpError(413, 'Rendered document would exceed the page limit');
+            }
             const margin = opts.margin || '10mm';
             buffer = await page.pdf({
                 printBackground: true,
@@ -192,18 +246,28 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
             RENDER_TIMEOUT_MS
         );
     });
+    // A client that leaves mid-render should not keep a slot until the deadline.
+    let onAbort;
+    const aborted = new Promise((_, reject) => {
+        if (!signal) return;
+        onAbort = () => reject(httpError(499, 'Client closed the request'));
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    });
     // Closing the context below rejects the abandoned work; swallow it so a lost
     // race never surfaces as an unhandled rejection.
     work.catch(() => {});
+    aborted.catch(() => {});
 
     try {
-        return await Promise.race([work, deadline]);
+        return await Promise.race([work, deadline, aborted]);
     } finally {
         clearTimeout(timer);
+        if (onAbort) signal.removeEventListener('abort', onAbort);
         abandoned = true;
         // Closing the context drops its pages; closing both is redundant work.
         // It also aborts whatever the abandoned render was still awaiting.
-        if (context) await context.close().catch(() => {});
+        if (context) await closeContext(context);
         releaseSlot();
     }
 }
@@ -211,6 +275,7 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
 module.exports = {
     renderHtmlToBuffer,
     initBrowser,
+    browserReady,
     closeBrowser,
     // exported for tests: the slot logic deadlocks the service if it is wrong
     _acquireSlot: acquireSlot,

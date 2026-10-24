@@ -11,6 +11,8 @@ function loadRenderWithStubbedBrowser({ env, newContextDelayMs = 0, hangForever 
   const stubPlaywright = {
     chromium: {
       launch: async () => ({
+        isConnected: () => true,
+        on: () => {},
         close: async () => {},
         newContext: async () => {
           if (newContextDelayMs) await new Promise(r => setTimeout(r, newContextDelayMs));

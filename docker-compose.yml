@@ -58,6 +58,25 @@ services:
       # Per-render deadline before the service returns 504.
       - RENDER_TIMEOUT_MS=60000
 
+      # A queued request that waits longer than this gets 503.
+      - RENDER_QUEUE_WAIT_MS=30000
+
+      # Output ceilings; a larger render is refused with 413. The defaults are
+      # estimates from the memory budget below. Measure peak RSS in the image
+      # before relying on them.
+      - MAX_PNG_PIXELS=40000000
+      - MAX_PDF_PAGES=200
+
+      # Renders one key may have running or queued at once (0 = no cap). Set on
+      # shared deployments so one caller cannot hold every slot.
+      - MAX_INFLIGHT_PER_KEY=0
+
+      # Wrong keys tolerated per IP per window before a 429.
+      - AUTH_FAIL_MAX=30
+
+      # Seconds-scale ceiling for graceful shutdown before a forced exit.
+      - SHUTDOWN_TIMEOUT_MS=10000
+
       # Max request body. Raising this multiplies the queue budget above:
       # RENDER_QUEUE_MAX x BODY_LIMIT is the worst-case backlog.
       - BODY_LIMIT=15mb

@@ -7,9 +7,9 @@ const { bodyErrorHandler } = require('./src/httpErrors');
 const fs = require('fs');
 const { validateAuth, authConfigured, isAuthFileInUse } = require('./src/auth');
 const { isRateLimitedFor } = require('./src/rateLimit');
-const { renderHtmlToBuffer, initBrowser, closeBrowser, _inFlight } = require('./src/render');
+const { renderHtmlToBuffer, initBrowser, browserReady, closeBrowser, _inFlight } = require('./src/render');
 
-const { PORT, OUTPUT_DIR, API_KEYS_FILE, AUTH_DISABLED } = config;
+const { PORT, OUTPUT_DIR, API_KEYS_FILE, AUTH_DISABLED, SHUTDOWN_TIMEOUT_MS } = config;
 
 // Fail closed: a deployment with no key source is almost always a mistake (for
 // example Docker created apikeys.txt as a directory), so it must not come up open.
@@ -23,7 +23,7 @@ if (!authConfigured() && !AUTH_DISABLED) {
   process.exit(1);
 }
 
-(async () => {
+async function main() {
   await ensureDir(OUTPUT_DIR, logger);
   await initBrowser();
 
@@ -32,7 +32,7 @@ if (!authConfigured() && !AUTH_DISABLED) {
     logger,
     auth: { validateAuth, authConfigured, isAuthFileInUse },
     limiter: { isRateLimitedFor },
-    render: { renderHtmlToBuffer, inFlight: _inFlight },
+    render: { renderHtmlToBuffer, inFlight: _inFlight, browserReady },
     validate: { validateOptions },
     httpErrors: { bodyErrorHandler }
   });
@@ -46,17 +46,32 @@ if (!authConfigured() && !AUTH_DISABLED) {
     }
   });
 
-  // Graceful shutdown
-  const shutdown = async (signal) => {
+  // Graceful shutdown. A second signal, or a close that never finishes, must not
+  // leave the process hanging: the orchestrator would wait out its kill timeout.
+  let shuttingDown = false;
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info({ signal }, 'Received shutdown signal');
+    setTimeout(() => {
+      logger.error('Shutdown timed out, forcing exit');
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS).unref();
     server.close(async () => {
       logger.info('HTTP server closed');
-      await closeBrowser();
+      try { await closeBrowser(); } catch (err) { logger.error({ err }, 'closeBrowser failed'); }
       process.exit(0);
     });
+    server.closeIdleConnections();
+    // Keep-alive connections with a request in flight get a short grace, then go.
+    setTimeout(() => server.closeAllConnections(), Math.min(5000, SHUTDOWN_TIMEOUT_MS / 2)).unref();
   };
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
-})();
+main().catch((err) => {
+  logger.fatal({ err }, 'Startup failed');
+  process.exit(1);
+});

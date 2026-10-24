@@ -186,3 +186,55 @@ test('F-14: an unknown route is a JSON 404', { todo: 'F-14 plan 04' }, async () 
     assert.match(r.headers.get('content-type'), /json/);
   } finally { await s.close(); }
 });
+
+test('/health is 503 when the browser is gone', async () => {
+  const s = await boot({ render: { browserReady: () => false } });
+  try {
+    const r = await fetch(`${s.url}/health`);
+    assert.equal(r.status, 503);
+    const body = await r.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.browser, 'disconnected');
+  } finally { await s.close(); }
+});
+
+test('MAX_INFLIGHT_PER_KEY: a second concurrent render from one key gets 429, then the counter drains', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const s = await boot({
+    config: { MAX_INFLIGHT_PER_KEY: 1 },
+    render: {
+      renderHtmlToBuffer: async () => {
+        await gate;
+        return { buffer: Buffer.from('%PDF'), scale: 1, contentSize: { width: 1, height: 1 }, paper: 'A4', orientation: 'portrait' };
+      }
+    }
+  });
+  try {
+    const first = post(s.url, html);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const second = await post(s.url, html);
+    assert.equal(second.status, 429);
+    assert.equal(second.headers.get('retry-after'), '5');
+    release();
+    assert.equal((await first).status, 200);
+    assert.equal((await post(s.url, html)).status, 200, 'the slot is free again');
+    assert.match(await (await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).text(), /viewsarn_per_key_limited_total 1/);
+  } finally { release(); await s.close(); }
+});
+
+test('by default there is no per-key cap: a burst all completes', async () => {
+  const s = await boot();
+  try {
+    const results = await Promise.all(Array.from({ length: 8 }, () => post(s.url, html)));
+    assert.deepEqual(results.map(r => r.status), Array(8).fill(200));
+  } finally { await s.close(); }
+});
+
+test('a 413 render error is counted as oversize', async () => {
+  const s = await boot({ render: { renderHtmlToBuffer: async () => { throw Object.assign(new Error('too big'), { status: 413 }); } } });
+  try {
+    assert.equal((await post(s.url, html)).status, 413);
+    assert.match(await (await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).text(), /viewsarn_render_oversize_total 1/);
+  } finally { await s.close(); }
+});

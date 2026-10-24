@@ -42,7 +42,11 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ✅ **R-1.17** | `options` is validated before rendering: `format`, `orientation`, `waitUntil`, `margin`, `dpi`, `scale`, and `filename` are rejected with `400` when malformed, rather than silently coerced. `filename` may not contain path separators. |
 | ☑️ **R-1.18** | Every request carries an `X-Request-Id` — the caller's if supplied, otherwise generated — echoed in the response header, included in the error body, and attached to that request's log lines. |
 | ☑️ **R-1.19** | A `500` body reports a generic message. Chromium and filesystem detail goes to the log under the request id, never to the caller. |
-| ☑️ **R-1.20** | A caller that disconnects while queued is dropped from the queue rather than rendered for, and no response is written to the closed socket. |
+| ☑️ **R-1.20** | A caller that disconnects while queued is dropped from the queue rather than rendered for, and no response is written to the closed socket. A caller that disconnects while its render is running has the render abandoned, its context closed, and its slot released. |
+| ☑️ **R-1.21** | A request that waits more than `RENDER_QUEUE_WAIT_MS` (default 30000) for a render slot is removed from the queue and answered `503`. |
+| ☑️ **R-1.22** | A render whose output would exceed `MAX_PNG_PIXELS` (default 40,000,000 device pixels; full-page PNGs count the whole document) or `MAX_PDF_PAGES` (default 200) is refused with `413` before the screenshot or PDF is produced. `dpi` is never lowered silently. |
+| ☑️ **R-1.23** | When `MAX_INFLIGHT_PER_KEY` is above 0, a caller with that many renders running or queued gets `429` with `Retry-After`. The default 0 means no cap. |
+| ☑️ **R-1.24** | A browser that disconnects is replaced on the next render, concurrent callers share one launch, and a failed launch answers `503`. Shutdown stops new launches. A hung `context.close()` is abandoned after 5 s so it cannot pin a slot. |
 
 ### Scaling
 
@@ -125,7 +129,7 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 
 | | Requirement |
 |---|---|
-| ☑️ **R-5.1** | `GET /health` returns `200` with `ok`, `apiAuthFileInUse`, and the rate-limit configuration. It skips **authentication** — container healthchecks and load balancer probes cannot present a key. |
+| ☑️ **R-5.1** | `GET /health` returns `200` when the browser is connected and `503` when it is not (body: `ok`, `browser`), plus `apiAuthFileInUse`, and the rate-limit configuration. It skips **authentication** — container healthchecks and load balancer probes cannot present a key. |
 | ☑️ **R-5.2** | `/health` is **not** exempt from rate limiting; it must not be pollable for free. |
 | ☑️ **R-5.7** | `/metrics` exposes Prometheus counters when `METRICS_ENABLED=true`, off by default. It requires a key whenever authentication is configured, and is open only when the service runs with `AUTH_DISABLED=true`. It is rate limited either way. |
 | ☑️ **R-5.8** | CORS headers are sent only for origins listed in `CORS_ORIGINS`, which is empty by default — correct for a server-to-server service. A preflight from an unlisted origin is refused with `403`. |
@@ -164,7 +168,8 @@ Requirements added or changed after the initial specification, with the reason. 
 | R-3.4 | Added | `RATE_LIMIT_MAX=0` silently became the default of 120, because config treated 0 as "unset" and the first-insert path never checked the count. |
 | R-2.3 | Changed | Auth failed open: a missing keys file, a keys path that Docker created as a directory, or an empty file all left the service unauthenticated with only a log warning (audit 2026-10-24, F-04). Open mode now needs `AUTH_DISABLED=true`. |
 | R-2.9 | Added | A request with a wrong key is counted per client IP (`AUTH_FAIL_MAX`, default 30 per window); past the budget the answer is 429 instead of 401. A valid key is never throttled by failed attempts, because behind a proxy without `TRUST_PROXY` all clients share one IP. |
-| R-5.1 | Changed | `/health` no longer returns `pid`. |
+| R-5.1 | Changed | `/health` no longer returns `pid`, and returns `503` when the browser is disconnected so the orchestrator restarts the container (audit F-02). |
+| R-1.20 to R-1.24 | Added | A dead Chromium was never replaced and `/health` stayed green; output size was unbounded; one key could hold every slot; queued requests waited with no bound (audit F-02, F-03, F-07, F-13). |
 | R-5.7 | Changed | `/metrics` requires a key when auth is configured. |
 | R-2.5 | Changed | The first empty or missing read keeps the previous keys; a second consecutive one clears them, so revoking the last key works. |
 | R-2.5 | Added | Any read error on the keys file cleared every key, which could drop a running service into unauthenticated mode on a transient `EACCES`. |

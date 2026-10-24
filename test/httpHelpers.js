@@ -66,6 +66,7 @@ function makeDeps(over = {}) {
         orientation: 'portrait'
       }),
       inFlight: () => ({ active: 0, waiting: 0 }),
+      browserReady: () => true,
       ...over.render
     },
     validate: { validateOptions },

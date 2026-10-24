@@ -14,11 +14,11 @@ async function ensureDir(dir, logger) {
 // whole HTTP layer without a browser, a real keys file, or a bound port.
 //   auth       = { validateAuth, authConfigured, isAuthFileInUse }
 //   limiter    = { isRateLimitedFor }
-//   render     = { renderHtmlToBuffer, inFlight }
+//   render     = { renderHtmlToBuffer, inFlight, browserReady }
 //   validate   = { validateOptions }
 //   httpErrors = { bodyErrorHandler }
 function createApp({ config, logger, auth, limiter, render, validate, httpErrors }) {
-    const { OUTPUT_DIR, AUTH_FAIL_MAX, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
+    const { OUTPUT_DIR, AUTH_FAIL_MAX, MAX_INFLIGHT_PER_KEY = 0, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
 
     const app = express();
     app.disable('x-powered-by');
@@ -58,7 +58,9 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
     app.use(httpErrors.bodyErrorHandler({ bodyLimit: BODY_LIMIT, logger }));
 
     // Counters are process-local and reset on restart, like the rate limiter.
-    const metrics = { requests: 0, renders: 0, failures: 0, rejected: 0, timeouts: 0, unauthorized: 0, rateLimited: 0 };
+    const metrics = { requests: 0, renders: 0, failures: 0, rejected: 0, timeouts: 0, unauthorized: 0, rateLimited: 0, oversize: 0, perKeyLimited: 0 };
+    // Renders running or queued per caller, for MAX_INFLIGHT_PER_KEY.
+    const inflight = new Map();
 
     // auth & rate-limit middleware
     app.use((req, res, next) => {
@@ -129,6 +131,22 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
                 filename: null
             }, body.options || {});
 
+            // One caller must not hold every slot. Off by default (0) so a batch
+            // caller still queues; shared deployments opt in.
+            const callerId = req.principal.id;
+            if (MAX_INFLIGHT_PER_KEY > 0) {
+                if ((inflight.get(callerId) || 0) >= MAX_INFLIGHT_PER_KEY) {
+                    metrics.perKeyLimited += 1;
+                    res.setHeader('Retry-After', '5');
+                    return res.status(429).json({ error: 'Too many renders in flight for this key', request_id: req.requestId });
+                }
+                inflight.set(callerId, (inflight.get(callerId) || 0) + 1);
+                res.on('close', () => {
+                    const left = (inflight.get(callerId) || 1) - 1;
+                    if (left > 0) inflight.set(callerId, left); else inflight.delete(callerId);
+                });
+            }
+
             const saveToDisk = !!body.save;
             const outPathRel = body.outPath || null;
 
@@ -197,6 +215,7 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
                 logger.error({ err, requestId: req.requestId }, 'Error in /convert');
             } else {
                 if (status === 503) metrics.rejected += 1;
+                if (status === 413) metrics.oversize += 1;
                 if (status === 504) metrics.timeouts += 1;
                 logger.warn({ status, reason: err.message, requestId: req.requestId }, 'Render not completed');
             }
@@ -222,6 +241,8 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
                 ['viewsarn_render_timeouts_total', 'counter', 'Renders abandoned with a 504 at the deadline', metrics.timeouts],
                 ['viewsarn_unauthorized_total', 'counter', 'Requests rejected with a 401', metrics.unauthorized],
                 ['viewsarn_rate_limited_total', 'counter', 'Requests rejected with a 429', metrics.rateLimited],
+                ['viewsarn_render_oversize_total', 'counter', 'Renders refused with a 413 because the output would be too large', metrics.oversize],
+                ['viewsarn_per_key_limited_total', 'counter', 'Renders refused with a 429 because the key had too many in flight', metrics.perKeyLimited],
                 ['viewsarn_renders_active', 'gauge', 'Renders holding a slot right now', inFlight.active],
                 ['viewsarn_renders_queued', 'gauge', 'Requests waiting for a render slot', inFlight.waiting]
             ];
@@ -231,8 +252,11 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
         });
     }
 
-    app.get('/health', (req, res) => res.json({
-        ok: true,
+    // 503 when the browser is gone, so an orchestrator restarts the container
+    // instead of leaving a green health check over a service that cannot render.
+    app.get('/health', (req, res) => res.status(render.browserReady() ? 200 : 503).json({
+        ok: render.browserReady(),
+        browser: render.browserReady() ? 'connected' : 'disconnected',
         apiAuthFileInUse: auth.isAuthFileInUse(),
         rate_limit_window_ms: RATE_LIMIT_WINDOW_MS,
         rate_limit_max: RATE_LIMIT_MAX

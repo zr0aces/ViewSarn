@@ -50,6 +50,18 @@ module.exports = {
     // Wall-clock ceiling for one render. Without it a wedged page holds its
     // slot forever and RENDER_CONCURRENCY such requests wedge the service.
     RENDER_TIMEOUT_MS: num(process.env.RENDER_TIMEOUT_MS, 60_000),
+    // A queued request that waits longer than this gets a 503 instead of waiting
+    // for a slot until a proxy has long since dropped the connection.
+    RENDER_QUEUE_WAIT_MS: num(process.env.RENDER_QUEUE_WAIT_MS, 30_000),
+    // Ceilings on what one render may allocate. Defaults are estimates from the
+    // compose memory budget (about 150 MB per render, 4 bytes per device pixel);
+    // measure peak RSS in the image before relying on them.
+    MAX_PNG_PIXELS: num(process.env.MAX_PNG_PIXELS, 40_000_000),
+    MAX_PDF_PAGES: num(process.env.MAX_PDF_PAGES, 200),
+    // Renders one API key may have running or queued at once. 0 = no cap, so a
+    // batch caller still queues; shared deployments should set it.
+    MAX_INFLIGHT_PER_KEY: num(process.env.MAX_INFLIGHT_PER_KEY, 0, 0),
+    SHUTDOWN_TIMEOUT_MS: num(process.env.SHUTDOWN_TIMEOUT_MS, 10_000),
     BODY_LIMIT: parseBodyLimit(process.env.BODY_LIMIT),
     // Express `trust proxy`. Off by default: behind a reverse proxy this must be
     // on or every unauthenticated client shares the proxy's IP — one bucket for

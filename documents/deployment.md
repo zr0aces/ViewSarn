@@ -817,6 +817,8 @@ Counters are per process and reset on restart, so aggregate across replicas rath
 | `viewsarn_render_rejected_total` | counter | `503`s — the queue is full; raise capacity or shed earlier |
 | `viewsarn_render_timeouts_total` | counter | `504`s — renders hitting `RENDER_TIMEOUT_MS` |
 | `viewsarn_rate_limited_total` | counter | `429`s |
+| `viewsarn_render_oversize_total` | counter | `413`s — output over `MAX_PNG_PIXELS` or `MAX_PDF_PAGES` |
+| `viewsarn_per_key_limited_total` | counter | `429`s from `MAX_INFLIGHT_PER_KEY` |
 | `viewsarn_unauthorized_total` | counter | `401`s — misconfigured clients, or probing |
 | `viewsarn_renders_active` | gauge | Slots in use; sustained at `RENDER_CONCURRENCY` means saturated |
 | `viewsarn_renders_queued` | gauge | Backlog depth; approaching `RENDER_QUEUE_MAX` precedes `503`s |
@@ -908,6 +910,8 @@ healthcheck:
 ```
 
 Create `apikeys.txt` before the first `docker compose up`: if the file is missing, Docker makes a directory at that path and the service exits at startup with a message saying so. Set `AUTH_DISABLED=true` only for a deployment that must run with no keys.
+
+Queued requests also expire: after `RENDER_QUEUE_WAIT_MS` (default 30000) a waiting request gets `503`. `MAX_INFLIGHT_PER_KEY` (default 0, off) caps the renders one key may have running or queued; set it on shared deployments. `MAX_PNG_PIXELS` (40,000,000) and `MAX_PDF_PAGES` (200) refuse oversize output with `413`; the defaults are estimates, so measure peak RSS in your image. `/health` returns `503` when Chromium has disconnected, so the container healthcheck restarts it; `AUTH_FAIL_MAX` (default 30) and `SHUTDOWN_TIMEOUT_MS` (default 10000) round out the new settings.
 
 `/health` itself needs no API key — it is exempt from the auth middleware — so Kubernetes `httpGet` probes and load balancer checks work unmodified.
 
