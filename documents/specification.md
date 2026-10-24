@@ -70,7 +70,7 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-2.1** | A key is accepted as `Authorization: Bearer <key>` or `X-API-Key: <key>`. (Tests cover the bearer form only.) |
 | ☑️ **R-2.2** | Key sources resolve in order: a non-empty `API_KEYS_FILE` wins over `API_KEY`. |
 | ✅ **R-2.7** | API keys are compared as fixed-length SHA-256 digests, never as raw strings — `===` on a secret leaks its prefix through response timing. |
-| ☑️ **R-2.8** | Wrong keys are counted per client IP against `AUTH_FAIL_MAX` per rate-limit window. Past the budget the response is `429` with `Retry-After` instead of `401`. A valid key must never be refused because of failed attempts from the same IP. |
+| ☑️ **R-2.9** | Wrong keys are counted per client IP against `AUTH_FAIL_MAX` per rate-limit window. Past the budget the response is `429` with `Retry-After` instead of `401`. A valid key must never be refused because of failed attempts from the same IP. |
 | ☑️ **R-2.8** | The keys file is loaded **synchronously** at startup. An async first load leaves a window where a configured keys file is not yet read, during which the service falls back to `API_KEY` or serves unauthenticated. |
 | ☑️ **R-2.3** | With **neither** configured, the service must refuse to start (exit 1, naming the keys path and saying so when that path is a directory) and, if the check is bypassed, must answer every request with 401. Running with no keys requires the explicit opt-out `AUTH_DISABLED=true`, which logs a warning at startup, ignores any presented key header, and rate-limits by client IP only. |
 | ☑️ **R-2.4** | The keys file is re-read every `API_KEYS_RELOAD_MS` so keys can be added or revoked without a restart. |
@@ -163,7 +163,7 @@ Requirements added or changed after the initial specification, with the reason. 
 | R-3.5 | Added | Counters were never reclaimed, growing one entry per distinct IP forever. The first fix swept on every insert, which is O(n) per request under a spray; sweeping is now amortised to once per window. |
 | R-3.4 | Added | `RATE_LIMIT_MAX=0` silently became the default of 120, because config treated 0 as "unset" and the first-insert path never checked the count. |
 | R-2.3 | Changed | Auth failed open: a missing keys file, a keys path that Docker created as a directory, or an empty file all left the service unauthenticated with only a log warning (audit 2026-10-24, F-04). Open mode now needs `AUTH_DISABLED=true`. |
-| R-2.8 | Added | A request with a wrong key is counted per client IP (`AUTH_FAIL_MAX`, default 30 per window); past the budget the answer is 429 instead of 401. A valid key is never throttled by failed attempts, because behind a proxy without `TRUST_PROXY` all clients share one IP. |
+| R-2.9 | Added | A request with a wrong key is counted per client IP (`AUTH_FAIL_MAX`, default 30 per window); past the budget the answer is 429 instead of 401. A valid key is never throttled by failed attempts, because behind a proxy without `TRUST_PROXY` all clients share one IP. |
 | R-5.1 | Changed | `/health` no longer returns `pid`. |
 | R-5.7 | Changed | `/metrics` requires a key when auth is configured. |
 | R-2.5 | Changed | The first empty or missing read keeps the previous keys; a second consecutive one clears them, so revoking the last key works. |
