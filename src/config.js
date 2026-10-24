@@ -19,6 +19,15 @@ function parseTrustProxy(value) {
     return value;
 }
 
+// body-parser silently drops its size cap when it cannot parse the limit string
+// (GHSA-v422-hmwv-36x6), so a typo here would remove the protection without a sign.
+// Reject anything that is not bytes or a number with a b/kb/mb/gb suffix.
+function parseBodyLimit(value) {
+    if (value === undefined || value === '') return '15mb';
+    if (/^\d+(\.\d+)?\s*(b|kb|mb|gb)?$/i.test(value) && Number.parseFloat(value) > 0) return value;
+    throw new Error(`BODY_LIMIT is invalid: "${value}". Use a byte count or a size such as 15mb.`);
+}
+
 module.exports = {
     PORT: num(process.env.PORT, 3000, 0),
     OUTPUT_DIR: process.env.OUTPUT_DIR || '/output',
@@ -39,7 +48,7 @@ module.exports = {
     // Wall-clock ceiling for one render. Without it a wedged page holds its
     // slot forever and RENDER_CONCURRENCY such requests wedge the service.
     RENDER_TIMEOUT_MS: num(process.env.RENDER_TIMEOUT_MS, 60_000),
-    BODY_LIMIT: process.env.BODY_LIMIT || '15mb',
+    BODY_LIMIT: parseBodyLimit(process.env.BODY_LIMIT),
     // Express `trust proxy`. Off by default: behind a reverse proxy this must be
     // on or every unauthenticated client shares the proxy's IP — one bucket for
     // everyone. On without a trusted proxy in front is worse: clients then spoof

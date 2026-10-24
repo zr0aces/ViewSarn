@@ -1,5 +1,11 @@
 const http = require('http');
 
+const apiKey = process.env.API_KEY;
+if (!apiKey) {
+    console.error('Usage: API_KEY=<your key> node test-convert.js   (server must be running on :3000)');
+    process.exit(1);
+}
+
 const data = JSON.stringify({
     html: '<h1>Hello World</h1>',
     options: {
@@ -16,7 +22,7 @@ const options = {
     headers: {
         'Content-Type': 'application/json',
         'Content-Length': data.length,
-        'Authorization': 'Bearer api_1GU2ZrRoGA-x9jNh-YX4IdZiLcLzrzEx'
+        'Authorization': `Bearer ${apiKey}`
     }
 };
 
