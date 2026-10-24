@@ -907,6 +907,8 @@ healthcheck:
   test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 ```
 
+Create `apikeys.txt` before the first `docker compose up`: if the file is missing, Docker makes a directory at that path and the service exits at startup with a message saying so. Set `AUTH_DISABLED=true` only for a deployment that must run with no keys.
+
 `/health` itself needs no API key — it is exempt from the auth middleware — so Kubernetes `httpGet` probes and load balancer checks work unmodified.
 
 **Other solutions:**

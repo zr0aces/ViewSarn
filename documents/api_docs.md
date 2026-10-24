@@ -30,7 +30,7 @@ Auth is only enforced when a key source is configured. Resolution order:
 
 1. `API_KEYS_FILE` (default `/app/apikeys.txt`) — one key per line, `#` comments ignored, hot-reloaded every `API_KEYS_RELOAD_MS` (default 30s). Takes precedence when the file exists and holds at least one key.
 2. `API_KEY` env — single key.
-3. **Neither configured → authentication is disabled and every request is accepted.** The server logs a warning at boot. Always configure a key source before exposing the service.
+3. **Neither configured → the server refuses to start** (exit 1). To run without keys on purpose, set `AUTH_DISABLED=true`: every request is accepted, any key header is ignored, and the limiter keys by client IP. The server logs a warning at boot.
 
 ### Methods
 

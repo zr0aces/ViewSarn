@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 const fssync = require('fs');
 const crypto = require('crypto');
-const { API_KEYS_FILE, API_KEY_ENV, API_KEYS_RELOAD_MS } = require('./config');
+const { API_KEYS_FILE, API_KEY_ENV, API_KEYS_RELOAD_MS, AUTH_DISABLED } = require('./config');
 const logger = require('./logger');
 
 // Keys are compared as SHA-256 digests, never as raw strings. `===` on secrets
@@ -25,6 +25,11 @@ function timingSafeEqualBuffers(a, b) {
 
 let apiKeySet = new Set();
 let apiKeysFileExists = false;
+// Consecutive reads that found the file missing or empty. A rotation that
+// truncates the file and then rewrites it is seen as "empty" for a moment, and
+// treating that as "no keys" would switch the service to its no-key path. One such
+// read keeps the previous keys; a second in a row is a real revocation.
+let emptyReads = 0;
 
 function parseKeys(text) {
     const keys = new Set();
@@ -36,12 +41,25 @@ function parseKeys(text) {
     return keys;
 }
 
-function applyKeyFileError(e) {
-    if (e.code === 'ENOENT') {
-        apiKeySet = new Set();
-        apiKeysFileExists = false;
+function noteEmpty(missing) {
+    emptyReads += 1;
+    if (emptyReads < 2 && apiKeySet.size > 0) {
+        logger.warn({ file: API_KEYS_FILE, missing }, 'API keys file is missing or empty; keeping previous keys until the next reload');
         return;
     }
+    apiKeySet = new Set();
+    apiKeysFileExists = !missing;
+}
+
+function applyKeys(keys) {
+    if (keys.size === 0) return noteEmpty(false);
+    emptyReads = 0;
+    apiKeySet = keys;
+    apiKeysFileExists = true;
+}
+
+function applyKeyFileError(e) {
+    if (e.code === 'ENOENT') return noteEmpty(true);
     // A transient read error (EACCES, EBUSY on a remount) must not silently
     // drop every key and fall back to unauthenticated mode. Keep what we had.
     logger.error({ err: e, file: API_KEYS_FILE }, 'Error reloading API keys file; keeping previously loaded keys');
@@ -51,8 +69,7 @@ async function loadApiKeysFromFile() {
     try {
         // Read directly rather than existsSync-then-read: one syscall instead of
         // two, and no window where the file disappears between the two calls.
-        apiKeySet = parseKeys(await fs.readFile(API_KEYS_FILE, 'utf8'));
-        apiKeysFileExists = true;
+        applyKeys(parseKeys(await fs.readFile(API_KEYS_FILE, 'utf8')));
         logger.debug({ count: apiKeySet.size }, 'Loaded API keys from file');
     } catch (e) {
         applyKeyFileError(e);
@@ -61,11 +78,9 @@ async function loadApiKeysFromFile() {
 
 // The first load is synchronous on purpose. Loading it asynchronously leaves a
 // window at startup where the keys file is configured but not yet read, during
-// which validateAuth sees no keys and falls back to API_KEY — or, with no
-// API_KEY set, to serving requests unauthenticated.
+// which validateAuth sees no keys and falls back to API_KEY or refuses requests.
 try {
-    apiKeySet = parseKeys(fssync.readFileSync(API_KEYS_FILE, 'utf8'));
-    apiKeysFileExists = true;
+    applyKeys(parseKeys(fssync.readFileSync(API_KEYS_FILE, 'utf8')));
 } catch (e) {
     applyKeyFileError(e);
 }
@@ -93,14 +108,21 @@ function validateAuth(req) {
         authRequired = true;
         if (provided && timingSafeEqualBuffers(digest(provided), digest(API_KEY_ENV))) valid = true;
     } else {
-        authRequired = false;
-        valid = true; // no auth configured
+        // Nothing configured. Open mode is an explicit choice (AUTH_DISABLED), never
+        // a default: a missing or unreadable keys file must not publish the service.
+        authRequired = !AUTH_DISABLED;
+        valid = AUTH_DISABLED;
     }
 
     return { valid, authRequired, principal: valid && authRequired ? principalFor(provided) : null };
 }
 
+// True when at least one key can authenticate a caller. An empty keys file does not count.
+const authConfigured = () => (apiKeysFileExists && apiKeySet.size > 0) || !!API_KEY_ENV;
+
 module.exports = {
     validateAuth,
+    authConfigured,
     isAuthFileInUse: () => apiKeysFileExists,
+    _reloadKeys: loadApiKeysFromFile,
 };

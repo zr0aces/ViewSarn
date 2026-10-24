@@ -71,9 +71,9 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-2.2** | Key sources resolve in order: a non-empty `API_KEYS_FILE` wins over `API_KEY`. |
 | ✅ **R-2.7** | API keys are compared as fixed-length SHA-256 digests, never as raw strings — `===` on a secret leaks its prefix through response timing. |
 | ☑️ **R-2.8** | The keys file is loaded **synchronously** at startup. An async first load leaves a window where a configured keys file is not yet read, during which the service falls back to `API_KEY` or serves unauthenticated. |
-| ☑️ **R-2.3** | With **neither** configured, authentication is disabled and every request is served. The service must log a warning at startup saying so. This is a deliberate zero-config default, not a bug — see §6. |
+| ☑️ **R-2.3** | With **neither** configured, the service must refuse to start (exit 1, naming the keys path and saying so when that path is a directory) and, if the check is bypassed, must answer every request with 401. Running with no keys requires the explicit opt-out `AUTH_DISABLED=true`, which logs a warning at startup, ignores any presented key header, and rate-limits by client IP only. |
 | ☑️ **R-2.4** | The keys file is re-read every `API_KEYS_RELOAD_MS` so keys can be added or revoked without a restart. |
-| ☑️ **R-2.5** | A **transient** read failure of the keys file (for example `EACCES`) must leave the previously loaded keys in force. Only the file's absence clears them. Failing to read must never silently drop the service into unauthenticated mode. |
+| ☑️ **R-2.5** | A **transient** read failure of the keys file (for example `EACCES`) must leave the previously loaded keys in force. A missing or empty file keeps the previous keys for one reload and clears them on the second consecutive missing or empty read, so a half-written rotation is tolerated and emptying the file still revokes keys. Failing to read must never silently drop the service into unauthenticated mode. |
 | ☑️ **R-2.6** | Rejected requests get `401` with a `WWW-Authenticate` header and no detail about why the key failed. |
 
 ---
@@ -113,7 +113,7 @@ The service runs one Chromium instance; every in-flight render holds a page, and
 
 Stated plainly, because two defaults here are permissive on purpose and reviewers should not have to re-derive the reasoning.
 
-- **Auth is optional (R-2.3).** The service is designed to run on a private network or behind a gateway. Zero-config startup is a convenience for local use; the startup warning is what makes the state visible. Anything reachable from outside must set `API_KEY` or mount `API_KEYS_FILE`.
+- **Auth is on unless explicitly disabled (R-2.3).** The service is designed to run on a private network or behind a gateway, where `AUTH_DISABLED=true` is acceptable. Without a key source and without that opt-out it does not start. Anything reachable from outside must set `API_KEY` or mount `API_KEYS_FILE`.
 - **HTML is not sanitised (R-0.5).** Rendering caller-supplied HTML means running caller-supplied JavaScript in Chromium. Callers are trusted. Do not expose `/convert` directly to untrusted end users without a sanitising layer in front; per-request context isolation (R-4.1) limits cross-request leakage but is not a sandbox boundary.
 - **Key comparison is not constant-time.** Keys are compared with `===` and set membership, which is timing-variable. Acceptable for high-entropy keys on a private network; switch to `crypto.timingSafeEqual` if that assumption stops holding.
 - **`/health` is unauthenticated (R-5.1)** and exposes `pid` and the rate-limit configuration. Treat that as public information, or block the path at the proxy.
@@ -161,6 +161,8 @@ Requirements added or changed after the initial specification, with the reason. 
 | R-4.3 | Added | `page.evaluate` has no timeout of its own. Combined with the new concurrency cap, one wedged page could pin a slot permanently and enough of them could stall the service — the cap turned a per-request hang into a global one, so the deadline had to come with it. |
 | R-3.5 | Added | Counters were never reclaimed, growing one entry per distinct IP forever. The first fix swept on every insert, which is O(n) per request under a spray; sweeping is now amortised to once per window. |
 | R-3.4 | Added | `RATE_LIMIT_MAX=0` silently became the default of 120, because config treated 0 as "unset" and the first-insert path never checked the count. |
+| R-2.3 | Changed | Auth failed open: a missing keys file, a keys path that Docker created as a directory, or an empty file all left the service unauthenticated with only a log warning (audit 2026-10-24, F-04). Open mode now needs `AUTH_DISABLED=true`. |
+| R-2.5 | Changed | The first empty or missing read keeps the previous keys; a second consecutive one clears them, so revoking the last key works. |
 | R-2.5 | Added | Any read error on the keys file cleared every key, which could drop a running service into unauthenticated mode on a transient `EACCES`. |
 | R-5.1, R-5.2 | Added | `/health` sat behind the global auth middleware, so every container healthcheck and Kubernetes probe failed once a key was configured. Exempting it from auth alone — not from rate limiting — fixes the probes without opening free polling. |
 | R-1.10 | Added | A refactor made `scale: null` clamp to 0.1, which would have shrunk every render that did not pass an explicit scale. |

@@ -17,9 +17,9 @@ services:
       # Method 2: Single API key (uncomment to use)
       # - API_KEY=your-secret-key-here
       #
-      # Setting the variable is NOT the same as enabling auth: if neither a key
-      # file nor API_KEY resolves, the service starts UNAUTHENTICATED and only
-      # logs a warning. Confirm with:
+      # Create apikeys.txt BEFORE `docker compose up`. If the file is missing,
+      # Docker creates a directory at that path and the service refuses to start.
+      # To run with no keys on purpose, set AUTH_DISABLED=true. Confirm with:
       #   curl localhost:3000/health   ->  "apiAuthFileInUse": true
 
       # API Keys Auto-reload Interval (milliseconds)

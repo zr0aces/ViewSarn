@@ -73,3 +73,99 @@ test('validateAuth accepts a key from the keys file and rejects one that is not 
     fs.rmSync(keysFile, { force: true });
   }
 });
+
+// ---- fail-closed behavior (audit F-04) ----
+
+const os = require('node:os');
+const tmpKeys = (content) => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'viewsarn-keys-')), 'apikeys.txt');
+  if (content !== null) fs.writeFileSync(file, content, 'utf8');
+  return file;
+};
+const bearer = (key) => makeRequest({ authorization: `Bearer ${key}` });
+
+test('nothing configured: requests are refused, not served open', () => {
+  const auth = loadFreshAuthModule({ API_KEYS_FILE: tmpKeys(null), API_KEY: '' });
+  assert.equal(auth.authConfigured(), false);
+  const result = auth.validateAuth(bearer('anything'));
+  assert.equal(result.valid, false);
+  assert.equal(result.authRequired, true);
+});
+
+test('AUTH_DISABLED=true with nothing configured: open, and no principal', () => {
+  const auth = loadFreshAuthModule({ API_KEYS_FILE: tmpKeys(null), API_KEY: '', AUTH_DISABLED: 'true' });
+  const result = auth.validateAuth(bearer('rotating-guess'));
+  assert.equal(result.valid, true);
+  assert.equal(result.authRequired, false);
+  assert.equal(result.principal, null);
+});
+
+test('an empty or comment-only keys file is not "configured"', () => {
+  for (const content of ['', '# only a comment\n\n']) {
+    const auth = loadFreshAuthModule({ API_KEYS_FILE: tmpKeys(content), API_KEY: '' });
+    assert.equal(auth.authConfigured(), false);
+    assert.equal(auth.validateAuth(bearer('x')).valid, false);
+  }
+});
+
+test('a directory at the keys path is not "configured"', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'viewsarn-keys-dir-'));
+  const auth = loadFreshAuthModule({ API_KEYS_FILE: dir, API_KEY: '' });
+  assert.equal(auth.authConfigured(), false);
+  assert.equal(auth.validateAuth(bearer('x')).valid, false);
+});
+
+test('keys survive one empty read and are revoked by a second', async () => {
+  const file = tmpKeys('key-one\n');
+  const auth = loadFreshAuthModule({ API_KEYS_FILE: file, API_KEY: '' });
+  assert.equal(auth.validateAuth(bearer('key-one')).valid, true);
+
+  fs.writeFileSync(file, '');                       // half-written rotation
+  await auth._reloadKeys();
+  assert.equal(auth.validateAuth(bearer('key-one')).valid, true, 'one empty read keeps the old keys');
+
+  await auth._reloadKeys();                         // still empty: a real revocation
+  assert.equal(auth.validateAuth(bearer('key-one')).valid, false);
+  assert.equal(auth.authConfigured(), false);
+});
+
+test('a non-empty read between two empty reads resets the count', async () => {
+  const file = tmpKeys('key-one\n');
+  const auth = loadFreshAuthModule({ API_KEYS_FILE: file, API_KEY: '' });
+  fs.writeFileSync(file, '');
+  await auth._reloadKeys();
+  fs.writeFileSync(file, 'key-two\n');
+  await auth._reloadKeys();
+  assert.equal(auth.validateAuth(bearer('key-two')).valid, true);
+  fs.writeFileSync(file, '');
+  await auth._reloadKeys();
+  assert.equal(auth.validateAuth(bearer('key-two')).valid, true, 'the count restarted after the good read');
+});
+
+test('a deleted keys file follows the same two-read rule', async () => {
+  const file = tmpKeys('key-one\n');
+  const auth = loadFreshAuthModule({ API_KEYS_FILE: file, API_KEY: '' });
+  fs.rmSync(file);
+  await auth._reloadKeys();
+  assert.equal(auth.validateAuth(bearer('key-one')).valid, true);
+  await auth._reloadKeys();
+  assert.equal(auth.validateAuth(bearer('key-one')).valid, false);
+});
+
+test('AUTH_DISABLED ignores a rotating X-API-Key: one rate-limit bucket, not one per request', async () => {
+  const { boot } = require('./httpHelpers');
+  const auth = loadFreshAuthModule({ API_KEYS_FILE: tmpKeys(null), API_KEY: '', AUTH_DISABLED: 'true' });
+  const limiter = loadFreshModules({}, ['../src/rateLimit']);
+  const s = await boot({ auth, limiter });
+  try {
+    for (let i = 0; i < 20; i++) {
+      await fetch(`${s.url}/health`, { headers: { 'X-API-Key': `guess-${i}` } });
+      await fetch(`${s.url}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': `guess-${i}` },
+        body: JSON.stringify({ html: '<p>x</p>' })
+      });
+    }
+    assert.equal(limiter._size(), 1);
+  } finally { await s.close(); }
+});

@@ -23,6 +23,9 @@ module.exports = {
     PORT: num(process.env.PORT, 3000, 0),
     OUTPUT_DIR: process.env.OUTPUT_DIR || '/output',
     API_KEY_ENV: process.env.API_KEY || null,
+    // Explicit opt-out for running with no keys at all. Without it, a service with no
+    // key source refuses to start (server.js) and refuses every request (auth.js).
+    AUTH_DISABLED: process.env.AUTH_DISABLED === 'true',
     API_KEYS_FILE: process.env.API_KEYS_FILE || '/app/apikeys.txt',
     API_KEYS_RELOAD_MS: num(process.env.API_KEYS_RELOAD_MS, 30_000),
     RATE_LIMIT_WINDOW_MS: num(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
