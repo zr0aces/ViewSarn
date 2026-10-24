@@ -17,4 +17,11 @@ function parseMarginToMm(m) {
     return parseFloat(m);
 }
 
-module.exports = { PAPER_SIZES, PX_PER_MM, parseMarginToMm };
+// The one place the A4 default lives. Object.hasOwn, not a bare lookup:
+// `format: "constructor"` would otherwise resolve to an inherited property.
+function paperFor(format) {
+    const name = String(format || 'A4').toUpperCase();
+    return Object.hasOwn(PAPER_SIZES, name) ? { name, ...PAPER_SIZES[name] } : { name: 'A4', ...PAPER_SIZES.A4 };
+}
+
+module.exports = { PAPER_SIZES, PX_PER_MM, parseMarginToMm, paperFor };

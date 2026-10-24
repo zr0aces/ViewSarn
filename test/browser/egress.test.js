@@ -49,6 +49,57 @@ test('rendered HTML cannot reach loopback; the same page can when EGRESS_ALLOW n
   }
 });
 
+test('an allowed host cannot redirect the browser to a blocked one', opts, async () => {
+  // 127.0.0.2 stands in for the metadata address: same loopback range, so it is
+  // blocked unless named, and Linux answers on it without any setup.
+  const target = http.createServer((req, res) => { target.hits.push(req.url); res.end('SECRET'); });
+  target.hits = [];
+  await new Promise(resolve => target.listen(0, '127.0.0.2', resolve));
+  const bouncer = http.createServer((req, res) => {
+    res.writeHead(302, { Location: `http://127.0.0.2:${target.address().port}/secret` }).end();
+  });
+  await new Promise(resolve => bouncer.listen(0, '127.0.0.1', resolve));
+  const html = `<iframe src="http://127.0.0.1:${bouncer.address().port}/go"></iframe>
+    <img src="http://127.0.0.1:${bouncer.address().port}/img">`;
+
+  const blocking = freshRender({ LOG_LEVEL: 'silent', EGRESS_ALLOW: '127.0.0.1' });
+  const allowing = freshRender({ LOG_LEVEL: 'silent', EGRESS_ALLOW: '127.0.0.1,127.0.0.2' });
+  try {
+    await blocking.renderHtmlToBuffer(html, { png: true });
+    assert.deepEqual(target.hits, [], 'the redirect target received nothing');
+
+    await allowing.renderHtmlToBuffer(html, { png: true });
+    assert.ok(target.hits.length > 0, 'control: the redirect is followed when its target is allowed');
+  } finally {
+    await blocking.closeBrowser();
+    await allowing.closeBrowser();
+    await new Promise(resolve => bouncer.close(resolve));
+    await new Promise(resolve => target.close(resolve));
+  }
+});
+
+test('rendered HTML cannot open a WebSocket to loopback unless EGRESS_ALLOW names it', opts, async () => {
+  const server = http.createServer();
+  const upgrades = [];
+  server.on('upgrade', (req, socket) => { upgrades.push(req.url); socket.destroy(); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const html = `<script>new WebSocket('ws://127.0.0.1:${server.address().port}/live')</script><h1>ws</h1>`;
+
+  const blocking = freshRender({ LOG_LEVEL: 'silent' });
+  const allowing = freshRender({ LOG_LEVEL: 'silent', EGRESS_ALLOW: '127.0.0.1' });
+  try {
+    await blocking.renderHtmlToBuffer(html, { png: true });
+    assert.deepEqual(upgrades, [], 'no handshake reached the server');
+
+    await allowing.renderHtmlToBuffer(html, { png: true });
+    assert.ok(upgrades.length > 0, 'control: the handshake arrives when allowed');
+  } finally {
+    await blocking.closeBrowser();
+    await allowing.closeBrowser();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('a dead host and the metadata address do not stall the render', opts, async () => {
   const render = freshRender({ LOG_LEVEL: 'silent', RENDER_TIMEOUT_MS: '30000' });
   try {

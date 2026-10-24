@@ -78,3 +78,9 @@ Before deleting the old inline code, run old and new `server.js` with the audit 
 ## Risks and rollback
 
 Moving code can alter middleware order. The step 6 diff is the guard. Single-commit revert restores the previous file.
+
+## EXECUTE notes (2026-10-24, recorded 2026-10-25)
+
+- The ten-request diff ran against the old and new `server.js` with the stub preload: identical status, headers and bodies apart from the random request id.
+- `server.js` is 80 lines, over the 60-line target, because plans 02 and 03 added the fail-closed startup check and bounded shutdown to it. The HTTP layer is entirely in `src/app.js`.
+- `test/app.test.js` imports only `test/httpHelpers.js` and, in one test, `src/rateLimit.js` through `loadFreshModules`; never `src/auth.js`, `src/render.js` or `playwright`.

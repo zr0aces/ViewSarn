@@ -36,11 +36,11 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-1.4** | With `save: true` the result is written under `OUTPUT_DIR/<key label>/` and the response is JSON metadata (`path` relative to `OUTPUT_DIR`, `filename`, `size`, `scale`, `contentSize`, `paper`, `orientation`) instead of the file. |
 | ☑️ **R-1.5** | `outPath` is resolved **under** the caller's own directory `OUTPUT_DIR/<key label>/`. A path that escapes it, by `..` segments or by a symlink, is refused with `400`; a leading `/` is tolerated and means the same as none. Two keys saving the same `outPath` write different files. A repeated `filename` or `outPath` overwrites the caller's earlier file. With `OUTPUT_MAX_BYTES` above 0, a save that would push the caller's directory past it is refused with `507`. |
 | ☑️ **R-1.25** | `save` must be a boolean and `outPath` a non-empty string, `filename` must not contain quotes, control characters or more than 200 characters, `png` and `single` must be booleans, and a `margin` that leaves no printable area is refused, each with `400`. |
-| ☑️ **R-1.28** | Requests made by rendered HTML to loopback, private, link-local or carrier-grade-NAT addresses, or over a scheme other than `http`, `https`, `data`, `about` or `blob`, are aborted; hostnames are resolved and every address is checked; a lookup failure aborts the request instead of leaving it unanswered. `EGRESS_ALLOW` (hostnames, IPs, CIDRs) names destinations that stay reachable. |
+| ✅ **R-1.28** | Requests made by rendered HTML to loopback, private, link-local or carrier-grade-NAT addresses, or over a scheme other than `http`, `https`, `data`, `about` or `blob`, are aborted; WebSockets get the same check, with `ws` and `wss` read as `http` and `https`. Hostnames are resolved and every address is checked; every redirect hop (`301`, `302`, `303`, `307`, `308`) is checked the same way, a chain longer than 5 redirects is aborted, and credentials are not carried to another origin. A lookup failure aborts the request instead of leaving it unanswered. `EGRESS_ALLOW` (hostnames, IPs, CIDRs) names destinations that stay reachable. A redirected response is delivered under the first URL of its chain, so relative URLs inside it resolve against that URL. |
 | ☑️ **R-1.27** | Every response is JSON with `error` and `request_id`, including an unknown route (`404`), an unsupported charset or `Content-Encoding` (`415`, with its own message), and an unexpected throw anywhere in the app (`500`, generic). |
 | ☑️ **R-1.26** | `Content-Disposition` carries an ASCII `filename` fallback and an RFC 5987 `filename*=UTF-8''` value, so non-Latin names work. The success log line and the `renders` counter are written after the response is sent. |
-| ☑️ **R-1.6** | Paper size comes from `format` (`A4`, `A5`, `LETTER`, `LEGAL`, case-insensitive). An unrecognised value falls back to A4 rather than erroring, and must not resolve to an inherited object property. |
-| ☑️ **R-1.7** | Margins accept `mm`, `cm`, and `in`. A bare number is read as mm. Other CSS units are not parsed. |
+| ☑️ **R-1.6** | Paper size comes from `format` (`A4`, `A5`, `LETTER`, `LEGAL`, case-insensitive). An absent value means A4; an unrecognised one is refused with `400` (R-1.17) and must not resolve to an inherited object property. |
+| ☑️ **R-1.7** | Margins accept `mm`, `cm`, and `in`. A bare number is read as mm, and `0` means no margin; an absent margin is 10mm. Other CSS units are not parsed. |
 | ☑️ **R-1.15** | Request bodies over `BODY_LIMIT` are rejected with `413` by the body parser, before the route runs. |
 | ✅ **R-1.16** | Every error carries a JSON `{ "error": ..., "request_id": ... }` body, including the `413` and malformed-JSON `400` raised by the body parser before any route runs. |
 | ✅ **R-1.17** | `options` is validated before rendering: `format`, `orientation`, `waitUntil`, `margin`, `dpi`, `scale`, and `filename` are rejected with `400` when malformed, rather than silently coerced. `filename` may not contain path separators. |
@@ -75,7 +75,7 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 
 | | Requirement |
 |---|---|
-| ☑️ **R-2.1** | A key is accepted as `Authorization: Bearer <key>` or `X-API-Key: <key>`. (Tests cover the bearer form only.) |
+| ☑️ **R-2.1** | A key is accepted as `Authorization: Bearer <key>` or `X-API-Key: <key>`. |
 | ☑️ **R-2.2** | Key sources resolve in order: a non-empty `API_KEYS_FILE` wins over `API_KEY`. |
 | ✅ **R-2.7** | API keys are compared as fixed-length SHA-256 digests, never as raw strings — `===` on a secret leaks its prefix through response timing. |
 | ☑️ **R-2.9** | Wrong keys are counted per client IP against `AUTH_FAIL_MAX` per rate-limit window. Past the budget the response is `429` with `Retry-After` instead of `401`. A valid key must never be refused because of failed attempts from the same IP. |
@@ -106,7 +106,7 @@ The service runs one Chromium instance; every in-flight render holds a page, and
 
 | | Requirement |
 |---|---|
-| ☑️ **R-4.1** | One browser instance is launched at startup and reused. Each request gets its own isolated context, closed when the request ends. |
+| ☑️ **R-4.1** | One browser instance is launched at startup and shared by every request; a disconnected one is replaced, never run alongside a second (R-1.24). Each request gets its own isolated context, closed when the request ends. |
 | ✅ **R-4.2** | At most `RENDER_CONCURRENCY` renders run at once. Beyond that, requests wait for a slot. |
 | ✅ **R-4.3** | A render that exceeds `RENDER_TIMEOUT_MS` is abandoned with `504` **and its slot is released**. No single request may hold a slot indefinitely: with the concurrency cap in place, enough wedged renders would otherwise stall the service entirely. |
 | ✅ **R-4.8** | An abandoned render must not leak its browser context, including when the deadline fires *before* the context finishes being created. Whichever side gets there second closes it. |
@@ -139,24 +139,34 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 | ☑️ **R-5.8** | CORS headers are sent only for origins listed in `CORS_ORIGINS`, which is empty by default — correct for a server-to-server service. A preflight from an unlisted origin is refused with `403`. |
 | ☑️ **R-5.3** | Logs go to stdout as one JSON object per line when `NODE_ENV=production`. Human-readable formatting is a development-only concern and must not cost anything in production. |
 | ☑️ **R-5.4** | `503` and `504` are load signals, logged at `warn`; only genuine faults log at `error`. |
-| ☑️ **R-5.5** | Configuration is environment variables only, read once at startup. A malformed or out-of-range value falls back to its default rather than crashing — except where zero is meaningful (R-3.4, and `PORT=0` for an ephemeral port). |
+| ☑️ **R-5.5** | Configuration is environment variables only, read once at startup. A malformed or out-of-range value falls back to its default rather than crashing — except where zero is meaningful (R-3.4, and `PORT=0` for an ephemeral port), and except `BODY_LIMIT` and `EGRESS_ALLOW`, which stop startup with a message naming the variable: falling back there would silently drop a size cap or an allow-list entry. |
 | ☑️ **R-5.6** | The container ships the Thai and English fonts it renders with; output must not depend on host fonts. |
 
 ---
 
 ## 8. Response codes
 
+Every body below is JSON with `error` and `request_id` (R-1.27).
+
 | Code | Meaning | Requirement |
 |---|---|---|
 | `200` | Converted, or saved | R-1.1, R-1.4 |
 | `400` | `html` missing or not a string | R-1.2 |
-| `400` | Malformed JSON body — JSON | R-1.16 |
-| `413` | Body exceeded `BODY_LIMIT` — JSON | R-1.15, R-1.16 |
+| `400` | Malformed JSON body | R-1.16 |
+| `400` | Invalid `options`, `save`, `outPath` or `filename`; `outPath` escapes the caller's directory | R-1.17, R-1.25, R-1.5 |
 | `401` | Key missing or wrong, where auth is configured | R-2.6 |
+| `404` | Unknown route | R-1.27 |
+| `413` | Body exceeded `BODY_LIMIT` | R-1.15, R-1.16 |
+| `413` | Rendered output would exceed `MAX_PNG_PIXELS` or `MAX_PDF_PAGES` | R-1.22 |
+| `415` | Unsupported charset or `Content-Encoding` | R-1.27 |
 | `429` | Rate limit exceeded | R-3.2 |
-| `500` | Render failed | — |
-| `503` | Render queue full — retry | R-4.4 |
+| `429` | Too many wrong keys from one IP | R-2.9 |
+| `429` | Too many renders in flight for one key | R-1.23 |
+| `500` | Render failed — generic message | R-1.19 |
+| `503` | Render queue full, queue wait exceeded, or browser unavailable — retry | R-4.4, R-1.21, R-1.24 |
+| `503` | `/health` while the browser is disconnected | R-5.1 |
 | `504` | Render exceeded its deadline | R-4.3 |
+| `507` | Save would exceed `OUTPUT_MAX_BYTES` | R-1.5 |
 
 ---
 
@@ -166,6 +176,12 @@ Requirements added or changed after the initial specification, with the reason. 
 
 | Requirement | Change | Why |
 |---|---|---|
+| R-1.28 | Changed | Playwright calls a route handler only for the first URL of a redirect chain, so a public URL answering `302` to `169.254.169.254` bypassed the filter (code review of PR #5). Redirects are now followed by the filter itself, hop by hop. Verified in the image: the redirect target received a request before the fix and none after. |
+| R-1.28 | Changed | WebSockets never reach `context.route`, so a page could open `ws://` to the host's private network; they are now checked through `routeWebSocket`. Only the five redirect statuses browsers follow are followed, with Fetch-standard method and credential rules. Verified in the image: the WebSocket test fails on the earlier code. |
+| R-5.5 | Changed | `BODY_LIMIT` already refused to start on a malformed value (body-parser drops its cap on one), and a malformed `EGRESS_ALLOW` CIDR crashed at startup with a bare `ERR_OUT_OF_RANGE`; both are now stated, and the `EGRESS_ALLOW` error names the variable. |
+| R-1.7 | Changed | `margin: 0` was read as "unset" and became 10mm. |
+| R-1.6 | Changed | It still said an unknown format falls back to A4, contradicting R-1.17, which rejects it. |
+| R-4.1 | Changed | The browser is no longer launched once for the life of the process; R-1.24 replaces a dead one. |
 | R-4.2, R-4.4, R-4.6 | Added | Concurrency was unbounded; a burst opened a page per request until the container was killed. |
 | R-4.3 | Added | `page.evaluate` has no timeout of its own. Combined with the new concurrency cap, one wedged page could pin a slot permanently and enough of them could stall the service — the cap turned a per-request hang into a global one, so the deadline had to come with it. |
 | R-3.5 | Added | Counters were never reclaimed, growing one entry per distinct IP forever. The first fix swept on every insert, which is O(n) per request under a spray; sweeping is now amortised to once per window. |

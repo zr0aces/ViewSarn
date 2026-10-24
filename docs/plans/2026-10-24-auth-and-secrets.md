@@ -104,3 +104,10 @@ Update spec requirements and change log, `documents/deployment.md`, `documents/a
 - Open deployments stop starting; fix is `AUTH_DISABLED=true`. Needs a release note.
 - Old logs still hold keys; the owner must rotate them and expire the logs.
 - Revert per commit. `AUTH_DISABLED=true` restores open mode without a revert.
+
+## EXECUTE notes (2026-10-24, recorded 2026-10-25)
+
+- Logs: `test/app.test.js` asserts neither the key nor the principal's full digest is logged. The digest assertion was missing until the code review of PR #5 added it.
+- Exit 1 with no key source: `test/startup.test.js`, including the keys path that is a directory.
+- Two-read rule: `test/auth.test.js`.
+- `npm audit --omit=dev --audit-level=high` exits 0 (0 vulnerabilities) and runs in `audit.yml` on a schedule and on `package*.json` changes, plus as a hard gate in `docker-publish.yml`. Its first GitHub run passed on PR #5.

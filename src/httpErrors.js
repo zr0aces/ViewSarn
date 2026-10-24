@@ -1,3 +1,7 @@
+// The one error body shape: `error`, any extra fields, then the request id.
+const sendError = (req, res, status, error, extra = {}) =>
+    res.status(status).json({ error, ...extra, request_id: req.requestId });
+
 // Express error middleware for the failures the body parser raises before any
 // route runs — an oversized body and a malformed JSON body. Without it those two
 // are answered by Express's default handler as an HTML page, so they would be
@@ -15,7 +19,7 @@ function bodyErrorHandler({ bodyLimit, logger }) {
             default: error = 'Bad request body';
         }
         if (logger) logger.warn({ requestId: req.requestId, status, type: err.type }, 'Rejected request body');
-        return res.status(status).json({ error, request_id: req.requestId });
+        return sendError(req, res, status, error);
     };
 }
 
@@ -25,8 +29,8 @@ function finalErrorHandler({ logger }) {
     return (err, req, res, next) => {
         if (res.headersSent) return next(err);
         if (logger) logger.error({ err, requestId: req.requestId }, 'Unhandled error');
-        return res.status(500).json({ error: 'Internal server error', request_id: req.requestId });
+        return sendError(req, res, 500, 'Internal server error');
     };
 }
 
-module.exports = { bodyErrorHandler, finalErrorHandler };
+module.exports = { sendError, bodyErrorHandler, finalErrorHandler };

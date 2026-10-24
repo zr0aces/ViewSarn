@@ -1,11 +1,11 @@
 const { chromium } = require('playwright');
 const { RENDER_CONCURRENCY, RENDER_QUEUE_MAX, RENDER_QUEUE_WAIT_MS, RENDER_TIMEOUT_MS, MAX_PNG_PIXELS, MAX_PDF_PAGES, EGRESS_ALLOW } = require('./config');
-const { isAllowedUrl, safeHost } = require('./egress');
+const { handleRoute, handleWebSocket } = require('./egress');
 const { pngPixels, pdfPages } = require('./limits');
-const { PAPER_SIZES, PX_PER_MM, parseMarginToMm } = require('./paper');
+const { PX_PER_MM, parseMarginToMm, paperFor } = require('./paper');
+const { WAIT_UNTIL } = require('./validate');
 const logger = require('./logger');
 
-const WAIT_UNTIL = new Set(['load', 'domcontentloaded', 'networkidle', 'commit']);
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 2;
 // A wedged context.close() must not pin a render slot for good.
@@ -156,20 +156,11 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
 
         // Rendered HTML is caller-supplied, so it must not be able to reach the
         // host's private network (cloud metadata, sidecars). The route is set before
-        // any page exists, and it answers every request: an unanswered one would
-        // hang until the render deadline.
+        // any page exists; handleRoute checks every redirect hop too, and
+        // WebSockets, which bypass context.route, get the same check.
         const egressCache = new Map();
-        await context.route('**/*', async (route) => {
-            const url = route.request().url();
-            try {
-                if (await isAllowedUrl(url, EGRESS_ALLOW, egressCache)) return await route.continue();
-                logger.warn({ host: safeHost(url) }, 'Blocked outbound request');
-            } catch (err) {
-                // DNS failure or an unparsable URL: deny.
-                logger.warn({ host: safeHost(url), reason: err.code || err.message }, 'Outbound request denied');
-            }
-            return route.abort('blockedbyclient').catch(() => {});
-        });
+        await context.route('**/*', (route) => handleRoute(route, context.request, EGRESS_ALLOW, egressCache));
+        await context.routeWebSocket(/.*/, (ws) => handleWebSocket(ws, EGRESS_ALLOW, egressCache));
 
         const page = await context.newPage();
 
@@ -190,16 +181,11 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
             return { width, height };
         });
 
-        const requested = (opts.format || 'A4').toUpperCase();
-        // Object.hasOwn, not a bare lookup: `format: "constructor"` would
-        // otherwise resolve to an inherited property and poison the math.
-        const paper = Object.hasOwn(PAPER_SIZES, requested) ? requested : 'A4';
-        const paperMm = PAPER_SIZES[paper];
-
-        let paperWidthMm = paperMm.w, paperHeightMm = paperMm.h;
+        let { name: paper, w: paperWidthMm, h: paperHeightMm } = paperFor(opts.format);
         if (opts.orientation === 'landscape') [paperWidthMm, paperHeightMm] = [paperHeightMm, paperWidthMm];
 
-        const marginMm = parseMarginToMm(opts.margin || '10mm') || 0;
+        // ??, not ||: a margin of 0 is a real request for no margin.
+        const marginMm = parseMarginToMm(opts.margin ?? '10mm') || 0;
         const availableWidthPx = Math.max(1, (paperWidthMm - 2 * marginMm) * PX_PER_MM);
         const availableHeightPx = Math.max(1, (paperHeightMm - 2 * marginMm) * PX_PER_MM);
 
@@ -234,7 +220,7 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
             const margin = `${marginMm}mm`;
             buffer = await page.pdf({
                 printBackground: true,
-                format: paper, // already narrowed to a PAPER_SIZES key above
+                format: paper, // a PAPER_SIZES key: paperFor() narrowed it
                 landscape: opts.orientation === 'landscape',
                 margin: { top: margin, bottom: margin, left: margin, right: margin },
                 scale
@@ -283,8 +269,9 @@ module.exports = {
     initBrowser,
     browserReady,
     closeBrowser,
+    // Feeds /metrics, and lets tests check slots drain back to zero.
+    inFlight: () => ({ active, waiting: waiting.length }),
     // exported for tests: the slot logic deadlocks the service if it is wrong
     _acquireSlot: acquireSlot,
-    _releaseSlot: releaseSlot,
-    _inFlight: () => ({ active, waiting: waiting.length })
+    _releaseSlot: releaseSlot
 };

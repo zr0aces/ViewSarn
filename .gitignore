@@ -15,7 +15,7 @@ config/config.local.json
 apikeys.txt
 
 # Local render output (OUTPUT_DIR=./output)
-output/
+/output/
 
 # Editor and OS files
 .vscode/*

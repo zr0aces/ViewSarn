@@ -1,4 +1,4 @@
-const { PAPER_SIZES, parseMarginToMm } = require('./paper');
+const { PAPER_SIZES, parseMarginToMm, paperFor } = require('./paper');
 
 const PAPER_FORMATS = new Set(Object.keys(PAPER_SIZES));
 const ORIENTATIONS = new Set(['portrait', 'landscape']);
@@ -47,7 +47,7 @@ function validateOptions(options) {
     // A margin that leaves no printable area makes page.pdf fail with a 500, so
     // reject it here, against the paper the request will actually use.
     if (margin !== undefined) {
-        const paper = PAPER_SIZES[String(format || 'A4').toUpperCase()] || PAPER_SIZES.A4;
+        const paper = paperFor(format);
         if (2 * parseMarginToMm(margin) >= Math.min(paper.w, paper.h)) {
             return '"options.margin" leaves no printable area on this paper size';
         }
@@ -67,4 +67,4 @@ function validateBody(body) {
     return null;
 }
 
-module.exports = { validateOptions, validateBody, PAPER_FORMATS, ORIENTATIONS, WAIT_UNTIL };
+module.exports = { validateOptions, validateBody, WAIT_UNTIL };

@@ -165,7 +165,7 @@ Authorization: Bearer your-api-key
 | `png` | boolean | `false` | `true`, `false` | If `true`, output PNG image; otherwise output PDF |
 | `format` | string | `"A4"` | `A4`, `A5`, `Letter`, `Legal` | Paper size (case-insensitive) |
 | `orientation` | string | `"portrait"` | `portrait`, `landscape` | Page orientation |
-| `margin` | string | `"10mm"` | e.g., `"10mm"`, `"1cm"`, `"0.5in"` | Page margins. `mm`, `cm`, and `in` are understood; a bare number is treated as **mm**. Other CSS units (`px`, `pt`) are not parsed — the numeric part is read as mm. |
+| `margin` | string\|number | `"10mm"` | e.g., `"10mm"`, `"1cm"`, `"0.5in"`, `10`, `0` | Page margins. `mm`, `cm`, and `in` are understood; a number is **mm**, and `0` means no margin. Other CSS units (`px`, `pt`) are rejected with `400`, as is a margin that leaves no printable area. |
 | `single` | boolean | `false` | `true`, `false` | Force content to fit on single page (shrink-to-fit) |
 | `scale` | number\|null | `null` | `0.1` to `2.0` or `null` | Manual scale override. If `null`, scale is auto-calculated |
 | `dpi` | number | `96` | `1` to `600` | PNG resolution in DPI (affects PNG output only). Output that would exceed `MAX_PNG_PIXELS` is refused with `413`. |

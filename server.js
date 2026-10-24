@@ -1,13 +1,13 @@
 // server.js - Playwright render API with API-key file + per-key rate limiting
 const config = require('./src/config');
 const logger = require('./src/logger');
-const { createApp, ensureDir } = require('./src/app');
+const { createApp } = require('./src/app');
 const { validateOptions, validateBody } = require('./src/validate');
 const { bodyErrorHandler, finalErrorHandler } = require('./src/httpErrors');
 const fs = require('fs');
 const { validateAuth, authConfigured, isAuthFileInUse } = require('./src/auth');
 const { isRateLimitedFor } = require('./src/rateLimit');
-const { renderHtmlToBuffer, initBrowser, browserReady, closeBrowser, _inFlight } = require('./src/render');
+const { renderHtmlToBuffer, initBrowser, browserReady, closeBrowser, inFlight } = require('./src/render');
 
 const { PORT, OUTPUT_DIR, API_KEYS_FILE, AUTH_DISABLED, SHUTDOWN_TIMEOUT_MS } = config;
 
@@ -24,7 +24,10 @@ if (!authConfigured() && !AUTH_DISABLED) {
 }
 
 async function main() {
-  await ensureDir(OUTPUT_DIR, logger);
+  // Logged, not fatal: streamed renders still work, and a save reports its own error.
+  await fs.promises.mkdir(OUTPUT_DIR, { recursive: true }).catch((err) => {
+    if (err.code !== 'EEXIST') logger.error({ err, dir: OUTPUT_DIR }, 'Error ensuring dir');
+  });
   await initBrowser();
 
   const { app } = createApp({
@@ -32,7 +35,7 @@ async function main() {
     logger,
     auth: { validateAuth, authConfigured, isAuthFileInUse },
     limiter: { isRateLimitedFor },
-    render: { renderHtmlToBuffer, inFlight: _inFlight, browserReady },
+    render: { renderHtmlToBuffer, inFlight, browserReady },
     validate: { validateOptions, validateBody },
     httpErrors: { bodyErrorHandler, finalErrorHandler }
   });
