@@ -48,7 +48,7 @@ Every error body is JSON with `error` and `request_id`, including the `413`/malf
 
 A client disconnect is detected with an `AbortController` fired from `res.on('close')` guarded by `res.writableFinished`, **not** `req.signal`: in Express 5 that signal is already aborted when the handler runs, so using it rejects every render as a disconnect and the request hangs with no response.
 
-`body.save: true` writes to `OUTPUT_DIR` and returns JSON metadata instead of streaming the file. `body.outPath` is joined under `OUTPUT_DIR` after stripping leading `../` — keep that normalization if you touch the save path.
+`body.save: true` writes to `OUTPUT_DIR/<key label>/` (`src/save.js`) and returns JSON metadata with a path relative to `OUTPUT_DIR`, instead of streaming the file. `body.outPath` is resolved under that directory; anything that escapes it, by `..` or a symlink, is a `400` rather than a silent rewrite — keep that check if you touch the save path. `OUTPUT_MAX_BYTES` caps one key's directory (`507`).
 
 Logging is Pino (`src/logger.js`), driven by `LOG_LEVEL`. `pino-pretty` is a **devDependency** and is only wired up when `NODE_ENV !== 'production'` — it costs a worker thread and emits non-parseable output, so production logs raw JSON. The Dockerfile installs with `--omit=dev`, so requiring `pino-pretty` unconditionally would crash the image on boot.
 

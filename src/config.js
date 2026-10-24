@@ -30,6 +30,9 @@ function parseBodyLimit(value) {
 
 module.exports = {
     PORT: num(process.env.PORT, 3000, 0),
+    // Bytes one key may keep under OUTPUT_DIR; 0 = no cap. Old files are never
+    // deleted by the service, so a shared deployment should set this.
+    OUTPUT_MAX_BYTES: num(process.env.OUTPUT_MAX_BYTES, 0, 0),
     OUTPUT_DIR: process.env.OUTPUT_DIR || '/output',
     API_KEY_ENV: process.env.API_KEY || null,
     // Explicit opt-out for running with no keys at all. Without it, a service with no

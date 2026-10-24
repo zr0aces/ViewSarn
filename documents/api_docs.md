@@ -156,7 +156,7 @@ Authorization: Bearer your-api-key
 | `html` | string | ✅ Yes | - | Raw HTML content to render. Can include inline CSS and JavaScript. |
 | `options` | object | No | `{}` | Rendering options (see below) |
 | `save` | boolean | No | `false` | If `true`, save file to server's `/output` directory instead of streaming |
-| `outPath` | string | No | `null` | Relative path within `/output` where file should be saved (only when `save=true`) |
+| `outPath` | string | No | `null` | Path within your own directory under `/output` (`/output/<key label>/`) where the file is saved (only when `save=true`). A path that escapes it returns `400`. A repeated path overwrites your earlier file. |
 
 #### Options Object
 
@@ -208,7 +208,7 @@ Content-Type: application/json
 **Body:**
 ```json
 {
-  "path": "/output/reports/document.pdf",
+  "path": "<key label>/reports/document.pdf",
   "filename": "document.pdf",
   "size": 45623,
   "scale": 1.0,
@@ -387,7 +387,7 @@ curl -X POST http://localhost:3000/convert \
 Response:
 ```json
 {
-  "path": "/output/reports/2025/january.pdf",
+  "path": "<key label>/reports/2025/january.pdf",
   "filename": "january.pdf",
   "size": 34567,
   "scale": 1.0,

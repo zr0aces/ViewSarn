@@ -104,8 +104,8 @@ test('save: true writes under OUTPUT_DIR and returns metadata', async () => {
     const body = await r.json();
     assert.equal(body.filename, 'out.pdf');
     assert.equal(body.size, 9);
-    assert.equal(body.path, path.join(s.outputDir, 'sub', 'out.pdf'));
-    assert.equal(fs.readFileSync(body.path, 'utf8'), '%PDF-stub');
+    assert.equal(body.path, path.join('abc123def456', 'sub', 'out.pdf'), 'relative, under the caller label');
+    assert.equal(fs.readFileSync(path.join(s.outputDir, body.path), 'utf8'), '%PDF-stub');
   } finally { await s.close(); }
 });
 
@@ -257,5 +257,17 @@ test('a render that fails after the work is not counted as a success', async () 
     await post(s.url, html);
     assert.match(await (await fetch(`${s.url}/metrics`, { headers: { Authorization: 'Bearer k1' } })).text(), /viewsarn_renders_total 0/);
     assert.equal(s.logs.filter(l => l.msg === 'Convert request completed').length, 0);
+  } finally { await s.close(); }
+});
+
+test('save: traversal is a 400 and writes nothing outside the caller directory', async () => {
+  const s = await boot();
+  try {
+    const r = await post(s.url, { ...html, save: true, outPath: '../../escape.pdf' });
+    assert.equal(r.status, 400);
+    assert.match((await r.json()).error, /output directory/);
+    assert.equal(fs.existsSync(path.join(s.outputDir, '..', 'escape.pdf')), false);
+    const bad = await post(s.url, { ...html, save: 'false' });
+    assert.equal(bad.status, 400);
   } finally { await s.close(); }
 });

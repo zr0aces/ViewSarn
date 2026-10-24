@@ -71,6 +71,10 @@ services:
       # shared deployments so one caller cannot hold every slot.
       - MAX_INFLIGHT_PER_KEY=0
 
+      # Bytes one key may keep under /output (0 = no cap). Files are never
+      # deleted by the service, so shared deployments should set this.
+      - OUTPUT_MAX_BYTES=0
+
       # Wrong keys tolerated per IP per window before a 429.
       - AUTH_FAIL_MAX=30
 

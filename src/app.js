@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
 const { contentDisposition } = require('./contentDisposition');
+const { saveBuffer } = require('./save');
 
 // Ensure output dir exists
 async function ensureDir(dir, logger) {
@@ -19,7 +20,7 @@ async function ensureDir(dir, logger) {
 //   validate   = { validateOptions, validateBody }
 //   httpErrors = { bodyErrorHandler }
 function createApp({ config, logger, auth, limiter, render, validate, httpErrors }) {
-    const { OUTPUT_DIR, AUTH_FAIL_MAX, MAX_INFLIGHT_PER_KEY = 0, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
+    const { OUTPUT_DIR, OUTPUT_MAX_BYTES = 0, AUTH_FAIL_MAX, MAX_INFLIGHT_PER_KEY = 0, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, BODY_LIMIT, TRUST_PROXY, CORS_ORIGINS, METRICS_ENABLED } = config;
 
     const app = express();
     app.disable('x-powered-by');
@@ -151,8 +152,6 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             const saveToDisk = !!body.save;
             const outPathRel = body.outPath || null;
 
-            if (saveToDisk) await ensureDir(OUTPUT_DIR, logger);
-
             // Abort only on a real client disconnect: 'close' also fires on normal
             // completion, so writableFinished is what separates the two. Deliberately
             // not req.signal — in Express 5 that is already aborted by the time the
@@ -182,19 +181,18 @@ function createApp({ config, logger, auth, limiter, render, validate, httpErrors
             });
 
             const ext = options.png ? 'png' : 'pdf';
-            const filename = options.filename ? options.filename : `output-${Date.now()}.${ext}`;
+            const filename = options.filename ? options.filename : `output-${crypto.randomUUID()}.${ext}`;
 
             if (saveToDisk) {
-                let finalPath;
-                if (outPathRel) {
-                    const safeRel = path.normalize(outPathRel).replace(/^(\.\.(\/|\\|$))+/, '');
-                    finalPath = path.join(OUTPUT_DIR, safeRel);
-                } else {
-                    finalPath = path.join(OUTPUT_DIR, filename);
-                }
-                await ensureDir(path.dirname(finalPath), logger);
-                await fs.writeFile(finalPath, buffer);
-                return res.json({ path: finalPath, filename: path.basename(finalPath), size: buffer.length, scale, contentSize, paper, orientation });
+                const saved = await saveBuffer({
+                    root: OUTPUT_DIR,
+                    label: req.principal.label,
+                    outPath: outPathRel,
+                    defaultName: filename,
+                    buffer,
+                    maxBytes: OUTPUT_MAX_BYTES
+                });
+                return res.json({ ...saved, size: buffer.length, scale, contentSize, paper, orientation });
             }
 
             res.setHeader('Content-Type', options.png ? 'image/png' : 'application/pdf');
