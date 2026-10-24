@@ -57,6 +57,7 @@ test('a context.close() that never returns does not pin the slot forever', async
   const { render: r } = loadRender({
     env: { RENDER_CONCURRENCY: '1' },
     newContext: async () => ({
+      route: async () => {},
       close: () => new Promise(() => {}),
       newPage: async () => ({
         setContent: async () => {},

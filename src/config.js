@@ -1,4 +1,5 @@
 const os = require('os');
+const { parseAllowList } = require('./egress');
 
 // min is the smallest meaningful value: 0 is a legitimate PORT (bind an
 // ephemeral port) and a legitimate RATE_LIMIT_MAX (reject everything), but a
@@ -65,6 +66,9 @@ module.exports = {
     // batch caller still queues; shared deployments should set it.
     MAX_INFLIGHT_PER_KEY: num(process.env.MAX_INFLIGHT_PER_KEY, 0, 0),
     SHUTDOWN_TIMEOUT_MS: num(process.env.SHUTDOWN_TIMEOUT_MS, 10_000),
+    // Hostnames, IPs and CIDRs that rendered HTML may reach even though they are
+    // private, loopback or link-local. Everything else private is blocked.
+    EGRESS_ALLOW: parseAllowList(process.env.EGRESS_ALLOW),
     BODY_LIMIT: parseBodyLimit(process.env.BODY_LIMIT),
     // Express `trust proxy`. Off by default: behind a reverse proxy this must be
     // on or every unauthenticated client shares the proxy's IP — one bucket for

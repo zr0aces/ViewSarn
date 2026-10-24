@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
-const { RENDER_CONCURRENCY, RENDER_QUEUE_MAX, RENDER_QUEUE_WAIT_MS, RENDER_TIMEOUT_MS, MAX_PNG_PIXELS, MAX_PDF_PAGES } = require('./config');
+const { RENDER_CONCURRENCY, RENDER_QUEUE_MAX, RENDER_QUEUE_WAIT_MS, RENDER_TIMEOUT_MS, MAX_PNG_PIXELS, MAX_PDF_PAGES, EGRESS_ALLOW } = require('./config');
+const { isAllowedUrl, safeHost } = require('./egress');
 const { pngPixels, pdfPages } = require('./limits');
 const { PAPER_SIZES, PX_PER_MM, parseMarginToMm } = require('./paper');
 const logger = require('./logger');
@@ -152,6 +153,24 @@ async function renderHtmlToBuffer(html, opts, { signal } = {}) {
             await created.close().catch(() => {});
             throw httpError(504, 'Render abandoned before it started');
         }
+
+        // Rendered HTML is caller-supplied, so it must not be able to reach the
+        // host's private network (cloud metadata, sidecars). The route is set before
+        // any page exists, and it answers every request: an unanswered one would
+        // hang until the render deadline.
+        const egressCache = new Map();
+        await context.route('**/*', async (route) => {
+            const url = route.request().url();
+            try {
+                if (await isAllowedUrl(url, EGRESS_ALLOW, egressCache)) return await route.continue();
+                logger.warn({ host: safeHost(url) }, 'Blocked outbound request');
+            } catch (err) {
+                // DNS failure or an unparsable URL: deny.
+                logger.warn({ host: safeHost(url), reason: err.code || err.message }, 'Outbound request denied');
+            }
+            return route.abort('blockedbyclient').catch(() => {});
+        });
+
         const page = await context.newPage();
 
         const waitUntil = WAIT_UNTIL.has(opts.waitUntil) ? opts.waitUntil : 'networkidle';

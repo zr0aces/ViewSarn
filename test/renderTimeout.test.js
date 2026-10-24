@@ -18,6 +18,7 @@ function loadRenderWithStubbedBrowser({ env, newContextDelayMs = 0, hangForever 
           if (newContextDelayMs) await new Promise(r => setTimeout(r, newContextDelayMs));
           const context = {
             closed: false,
+            route: async () => {},
             close: async () => { context.closed = true; },
             newPage: async () => ({
               setContent: async () => { if (hangForever) await new Promise(() => {}); },

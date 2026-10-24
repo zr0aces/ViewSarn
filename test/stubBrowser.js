@@ -10,6 +10,8 @@ function loadRender({ env = {}, page = {}, newContext, launchError } = {}) {
     const context = {
       closed: false,
       close: async () => { context.closed = true; },
+      routes: [],
+      route: async (pattern, handler) => { context.routes.push({ pattern, handler }); },
       newPage: async () => ({
         setContent: async () => {},
         evaluate: async () => ({ width: 800, height: 600 }),
@@ -48,7 +50,7 @@ function loadRender({ env = {}, page = {}, newContext, launchError } = {}) {
   for (const key of Object.keys(env)) previous[key] = process.env[key];
   Object.assign(process.env, env);
   process.env.LOG_LEVEL = 'silent';
-  for (const mod of ['../src/config', '../src/logger', '../src/limits', '../src/render']) {
+  for (const mod of ['../src/config', '../src/logger', '../src/limits', '../src/egress', '../src/render']) {
     delete require.cache[require.resolve(mod)];
   }
   const originalLoad = Module._load;
