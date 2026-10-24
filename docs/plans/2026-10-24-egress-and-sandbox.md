@@ -98,3 +98,9 @@ Commit: `chore(docker): sandbox profile` (or `chore(docker): drop capabilities`)
 - Extra DNS lookups add latency; keep a per-render cache (`Map`) only.
 - Seccomp profile needs retesting on Playwright upgrades (plan 06 smoke test covers it).
 - Revert per commit; `EGRESS_ALLOW` can list `0.0.0.0/0` if an operator must disable the filter.
+
+## EXECUTE notes (2026-10-24)
+
+- Step 3 ran in a real container built from this branch. A page that fetched a local server and a dead host produced 0 hits on the server with the filter; with the destination in `EGRESS_ALLOW` it produced 2 hits (the control). The dead host and `169.254.169.254` did not stall the render (0.6 s). `test/browser/egress.test.js` passes in the image.
+- Step 4: Playwright adds `--no-sandbox` unless `chromiumSandbox: true` is passed. With it, Chromium fails to start under Docker's default seccomp profile and starts with `seccomp=unconfined` or `--cap-add SYS_ADMIN`. A custom `chrome.json` could not be tested: the Docker daemon on the audit host refused it at container init (`runc ... function not implemented`). Decision: keep `--no-sandbox` and add compensating controls (`cap_drop: ALL`, `no-new-privileges`, read-only root, `/tmp` tmpfs), which were verified with Thai PDF, PNG at dpi 300 and `save`.
+- `options.javascript` was not added (dropped in review round 2).

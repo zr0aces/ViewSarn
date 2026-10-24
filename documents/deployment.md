@@ -838,6 +838,19 @@ const redis = new Redis(process.env.REDIS_URL);
 
 ---
 
+### Rendered HTML is an SSRF vector
+
+`html` is rendered by a real browser inside your network, so a page can request any address the container can reach: cloud metadata (`169.254.169.254`), sidecars, other internal services, and the container's own loopback. ViewSarn blocks these at the application layer:
+
+- Every request a page makes is checked. Loopback, private (RFC 1918), link-local, carrier-grade NAT and the IPv6 equivalents are refused, as is any scheme other than `http`, `https`, `data`, `about` and `blob` (so `file:` is out). Redirects are checked at each hop. A DNS failure is a refusal.
+- `EGRESS_ALLOW` opens named destinations: a comma-separated list of hostnames, IP addresses and CIDRs, for example `EGRESS_ALLOW=assets.internal.example,10.20.0.0/16`. A CIDR applies to the addresses a hostname resolves to.
+
+This filter is a second layer, not the boundary. The hostname is resolved once by ViewSarn and again by Chromium, so a DNS server that changes its answer between the two (rebinding) can slip past it, and WebSocket traffic is not intercepted. The boundary is a network rule: deny the metadata address and private ranges for this container, for example an egress-restricted Docker network or a Kubernetes `NetworkPolicy`.
+
+Chromium runs with `--no-sandbox`. Its own sandbox does not start under Docker's default seccomp profile, and the two ways to get it (`--cap-add SYS_ADMIN`, or `seccomp=unconfined`) loosen the container more than they protect it. The compose file therefore drops all capabilities, sets `no-new-privileges`, and mounts the root filesystem read-only with a `/tmp` tmpfs; the Thai PDF, PNG and `save` paths were checked against those settings.
+
+A healthcheck that reports unhealthy (`/health` returns 503 once Chromium has disconnected) does not by itself restart a plain Docker or Compose container. Use an orchestrator that acts on it (Kubernetes liveness probe) or an autoheal sidecar.
+
 ## Troubleshooting
 
 ### Issue: Container Crashes on Startup

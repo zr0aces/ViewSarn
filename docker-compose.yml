@@ -88,6 +88,10 @@ services:
       # Node.js Configuration (already set in the image; explicit here for
       # anyone building a variant — controls JSON vs pretty logging)
       - NODE_ENV=production
+
+      # The root filesystem is read-only (below), so Chromium's profile and
+      # cache go to the /tmp tmpfs.
+      - HOME=/tmp
     volumes:
       # Mount output directory for saved files
       - ./output:/output
@@ -95,6 +99,17 @@ services:
       # Mount API keys file (read-only)
       # Create apikeys.txt in project root before starting
       - ./apikeys.txt:/app/apikeys.txt:ro
+
+    # Container hardening. Chromium runs with --no-sandbox (its own sandbox needs
+    # SYS_ADMIN or an unconfined seccomp profile, both broader than this), so the
+    # container itself is the boundary. Verified against the image: Thai PDFs,
+    # PNGs and saved output all render with these settings.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
 
     # Shared memory for Chromium. The 64MB default crashes pages under load.
     # Increase for large documents or higher RENDER_CONCURRENCY.
