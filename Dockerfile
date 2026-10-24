@@ -1,5 +1,6 @@
 # 1. Use the "slim" variant (Bookworm is current stable Debian)
-ARG NODE_IMAGE=node:24-bookworm-slim
+# node:24-bookworm-slim, pinned by digest; Dependabot proposes the bumps.
+ARG NODE_IMAGE=node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
 FROM ${NODE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -74,4 +75,8 @@ USER www-data
 # Ensure we are in the correct directory for permissions
 WORKDIR /app 
 EXPOSE 3000
+# node, not curl: the slim base image has no curl. /health needs no key and
+# returns 503 once Chromium has disconnected.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["node", "/app/server.js"]

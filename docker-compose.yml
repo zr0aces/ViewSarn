@@ -17,9 +17,9 @@ services:
       # Method 2: Single API key (uncomment to use)
       # - API_KEY=your-secret-key-here
       #
-      # Setting the variable is NOT the same as enabling auth: if neither a key
-      # file nor API_KEY resolves, the service starts UNAUTHENTICATED and only
-      # logs a warning. Confirm with:
+      # Create apikeys.txt BEFORE `docker compose up`. If the file is missing,
+      # Docker creates a directory at that path and the service refuses to start.
+      # To run with no keys on purpose, set AUTH_DISABLED=true. Confirm with:
       #   curl localhost:3000/health   ->  "apiAuthFileInUse": true
 
       # API Keys Auto-reload Interval (milliseconds)
@@ -58,6 +58,30 @@ services:
       # Per-render deadline before the service returns 504.
       - RENDER_TIMEOUT_MS=60000
 
+      # A queued request that waits longer than this gets 503.
+      - RENDER_QUEUE_WAIT_MS=30000
+
+      # Output ceilings; a larger render is refused with 413. A full-page PNG
+      # costs about 22 bytes per device pixel (measured), so 25M pixels is about
+      # 550 MB; RENDER_CONCURRENCY x that plus ~150 MB idle must fit the memory
+      # limit below. MAX_PDF_PAGES is unmeasured.
+      - MAX_PNG_PIXELS=25000000
+      - MAX_PDF_PAGES=200
+
+      # Renders one key may have running or queued at once (0 = no cap). Set on
+      # shared deployments so one caller cannot hold every slot.
+      - MAX_INFLIGHT_PER_KEY=0
+
+      # Bytes one key may keep under /output (0 = no cap). Files are never
+      # deleted by the service, so shared deployments should set this.
+      - OUTPUT_MAX_BYTES=0
+
+      # Wrong keys tolerated per IP per window before a 429.
+      - AUTH_FAIL_MAX=30
+
+      # Seconds-scale ceiling for graceful shutdown before a forced exit.
+      - SHUTDOWN_TIMEOUT_MS=10000
+
       # Max request body. Raising this multiplies the queue budget above:
       # RENDER_QUEUE_MAX x BODY_LIMIT is the worst-case backlog.
       - BODY_LIMIT=15mb
@@ -65,6 +89,10 @@ services:
       # Node.js Configuration (already set in the image; explicit here for
       # anyone building a variant — controls JSON vs pretty logging)
       - NODE_ENV=production
+
+      # The root filesystem is read-only (below), so Chromium's profile and
+      # cache go to the /tmp tmpfs.
+      - HOME=/tmp
     volumes:
       # Mount output directory for saved files
       - ./output:/output
@@ -73,6 +101,17 @@ services:
       # Create apikeys.txt in project root before starting
       - ./apikeys.txt:/app/apikeys.txt:ro
 
+    # Container hardening. Chromium runs with --no-sandbox (its own sandbox needs
+    # SYS_ADMIN or an unconfined seccomp profile, both broader than this), so the
+    # container itself is the boundary. Verified against the image: Thai PDFs,
+    # PNGs and saved output all render with these settings.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
     # Shared memory for Chromium. The 64MB default crashes pages under load.
     # Increase for large documents or higher RENDER_CONCURRENCY.
     shm_size: "1gb"
@@ -80,15 +119,8 @@ services:
     # Restart policy
     restart: unless-stopped
 
-    # Health check
-    # Probes with node, not curl: the slim base image has no curl installed.
-    # /health needs no API key, but it is rate limited like any other request.
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    # The health check lives in the Dockerfile (HEALTHCHECK), so one definition
+    # serves docker run, Compose and orchestrators.
 
     # Resource limits (optional but recommended for production)
     # Keep in step with RENDER_CONCURRENCY and RENDER_QUEUE_MAX above.

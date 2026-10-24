@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateOptions } = require('../src/validate');
+const { validateOptions, validateBody } = require('../src/validate');
 const { bodyErrorHandler } = require('../src/httpErrors');
 
 const ok = (options) => assert.equal(validateOptions(options), null, `expected ${JSON.stringify(options)} to be accepted`);
@@ -115,4 +115,54 @@ test('the handler passes non-errors along untouched', () => {
   let called = false;
   bodyErrorHandler({ bodyLimit: '15mb' })(null, {}, fakeRes(), () => { called = true; });
   assert.equal(called, true);
+});
+
+test('png and single must be booleans', () => {
+  ok({ png: true, single: false });
+  rejects({ png: 'false' }, /options\.png/);
+  rejects({ png: 1 }, /options\.png/);
+  rejects({ single: 'true' }, /options\.single/);
+});
+
+test('filename rejects quotes, control characters and long names', () => {
+  ok({ filename: 'รายงาน.pdf' });
+  ok({ filename: 'my report (final).pdf' });
+  rejects({ filename: 'a"b.pdf' }, /options\.filename/);
+  rejects({ filename: 'a\r\nSet-Cookie: x' }, /options\.filename/);
+  rejects({ filename: 'a\0b' }, /options\.filename/);
+  rejects({ filename: 'x'.repeat(201) }, /options\.filename/);
+  rejects({ filename: 'a/b.pdf' }, /options\.filename/);
+});
+
+test('a margin that leaves no printable area is rejected for the chosen paper', () => {
+  ok({ margin: '10mm' });
+  ok({ margin: 0 });
+  rejects({ margin: '200mm' }, /printable area/);
+  rejects({ margin: 150, format: 'A5' }, /printable area/);
+  ok({ margin: '60mm', format: 'A4' });
+});
+
+test('save must be a boolean and outPath a non-empty string', () => {
+  assert.equal(validateBody({}), null);
+  assert.equal(validateBody({ save: true, outPath: 'a/b.pdf' }), null);
+  assert.match(validateBody({ save: 'false' }), /"save"/);
+  assert.match(validateBody({ save: 1 }), /"save"/);
+  assert.match(validateBody({ outPath: { a: 1 } }), /"outPath"/);
+  assert.match(validateBody({ outPath: 5 }), /"outPath"/);
+  assert.match(validateBody({ outPath: '' }), /"outPath"/);
+  assert.match(validateBody({ outPath: 'a\0b' }), /"outPath"/);
+});
+
+test('every option validateOptions reads has a rejecting case', () => {
+  const fs = require('node:fs');
+  const source = fs.readFileSync(require.resolve('../src/validate'), 'utf8');
+  const read = source.match(/const \{([^}]+)\} = options;/)[1].split(',').map(k => k.trim());
+  const bad = {
+    format: 'Z9', orientation: 'sideways', margin: 'wide', dpi: 0, scale: 5,
+    filename: 'a/b', waitUntil: 'never', png: 'yes', single: 'yes'
+  };
+  for (const key of read) {
+    assert.ok(key in bad, `"${key}" is validated but this table has no bad value for it`);
+    assert.notEqual(validateOptions({ [key]: bad[key] }), null, `${key}: ${JSON.stringify(bad[key])} must be rejected`);
+  }
 });

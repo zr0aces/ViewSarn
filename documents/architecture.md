@@ -91,7 +91,8 @@ ViewSarn is a **high-performance, containerized microservice** designed for high
 - Send responses (binary files or JSON)
 
 **Key Files:**
-- `server.js` - Main server setup and routing
+- `server.js` - Process entry point: startup checks, browser launch, listen, shutdown
+- `src/app.js` - `createApp()`: middleware, routes, error handling
 - `src/config.js` - Configuration management
 
 **Endpoints:**

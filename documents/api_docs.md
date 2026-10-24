@@ -30,7 +30,7 @@ Auth is only enforced when a key source is configured. Resolution order:
 
 1. `API_KEYS_FILE` (default `/app/apikeys.txt`) — one key per line, `#` comments ignored, hot-reloaded every `API_KEYS_RELOAD_MS` (default 30s). Takes precedence when the file exists and holds at least one key.
 2. `API_KEY` env — single key.
-3. **Neither configured → authentication is disabled and every request is accepted.** The server logs a warning at boot. Always configure a key source before exposing the service.
+3. **Neither configured → the server refuses to start** (exit 1). To run without keys on purpose, set `AUTH_DISABLED=true`: every request is accepted, any key header is ignored, and the limiter keys by client IP. The server logs a warning at boot.
 
 ### Methods
 
@@ -156,7 +156,7 @@ Authorization: Bearer your-api-key
 | `html` | string | ✅ Yes | - | Raw HTML content to render. Can include inline CSS and JavaScript. |
 | `options` | object | No | `{}` | Rendering options (see below) |
 | `save` | boolean | No | `false` | If `true`, save file to server's `/output` directory instead of streaming |
-| `outPath` | string | No | `null` | Relative path within `/output` where file should be saved (only when `save=true`) |
+| `outPath` | string | No | `null` | Path within your own directory under `/output` (`/output/<key label>/`) where the file is saved (only when `save=true`). A path that escapes it returns `400`. A repeated path overwrites your earlier file. |
 
 #### Options Object
 
@@ -168,8 +168,8 @@ Authorization: Bearer your-api-key
 | `margin` | string | `"10mm"` | e.g., `"10mm"`, `"1cm"`, `"0.5in"` | Page margins. `mm`, `cm`, and `in` are understood; a bare number is treated as **mm**. Other CSS units (`px`, `pt`) are not parsed — the numeric part is read as mm. |
 | `single` | boolean | `false` | `true`, `false` | Force content to fit on single page (shrink-to-fit) |
 | `scale` | number\|null | `null` | `0.1` to `2.0` or `null` | Manual scale override. If `null`, scale is auto-calculated |
-| `dpi` | number | `96` | Any positive number | PNG resolution in DPI (affects PNG output only) |
-| `filename` | string\|null | `null` | Any valid filename | Suggested filename for download or save |
+| `dpi` | number | `96` | `1` to `600` | PNG resolution in DPI (affects PNG output only). Output that would exceed `MAX_PNG_PIXELS` is refused with `413`. |
+| `filename` | string\|null | `null` | Up to 200 characters, no `/`, `\`, quotes or control characters | Suggested filename for download or save. Non-Latin names such as Thai are sent as an RFC 5987 `filename*` as well as an ASCII fallback. |
 | `waitUntil` | string | `"networkidle"` | `load`, `domcontentloaded`, `networkidle`, `commit` | When to consider the page ready. `networkidle` waits for 500ms of network silence — correct for HTML pulling remote images or fonts, but that half-second is pure latency for self-contained HTML. Use `load` there. Webfonts are always awaited via `document.fonts.ready` regardless of this setting. |
 
 #### Response (Stream Mode - save=false)
@@ -208,7 +208,7 @@ Content-Type: application/json
 **Body:**
 ```json
 {
-  "path": "/output/reports/document.pdf",
+  "path": "<key label>/reports/document.pdf",
   "filename": "document.pdf",
   "size": 45623,
   "scale": 1.0,
@@ -297,6 +297,20 @@ Returned once more than `RENDER_QUEUE_MAX` (default 100) requests are already wa
 ```
 
 One render may run for at most `RENDER_TIMEOUT_MS` (default 60000). Usually means the HTML never finished loading — check for resources that never resolve, and consider `waitUntil: "load"`.
+
+**413 Payload Too Large** (render) - The output would be too large
+
+A PNG that would exceed `MAX_PNG_PIXELS` device pixels (default 25,000,000; a full-page PNG counts the whole document) or a PDF over `MAX_PDF_PAGES` (default 200) is refused before it is produced. `dpi` is never lowered silently: reduce `dpi`, use `scale`, or split the document.
+
+**415 Unsupported Media Type** - The body used a charset other than UTF-8 or an unsupported `Content-Encoding`
+
+**429 Too Many Requests** (other causes) - `Too many failed authentication attempts` after `AUTH_FAIL_MAX` wrong keys from one IP, and `Too many renders in flight for this key` when `MAX_INFLIGHT_PER_KEY` is set. Both carry `Retry-After`.
+
+**503 Service Unavailable** (other causes) - `Timed out waiting for a render slot` after `RENDER_QUEUE_WAIT_MS` in the queue, and `Browser unavailable` while Chromium is being replaced.
+
+**507 Insufficient Storage** - `save: true` would take your directory past `OUTPUT_MAX_BYTES`
+
+**404 Not Found** - Unknown route. JSON like every other error.
 
 **500 Internal Server Error** - Rendering failed
 
@@ -387,7 +401,7 @@ curl -X POST http://localhost:3000/convert \
 Response:
 ```json
 {
-  "path": "/output/reports/2025/january.pdf",
+  "path": "<key label>/reports/2025/january.pdf",
   "filename": "january.pdf",
   "size": 34567,
   "scale": 1.0,
@@ -457,7 +471,6 @@ Content-Type: application/json
 ```json
 {
   "ok": true,
-  "pid": 24,
   "apiAuthFileInUse": true,
   "rate_limit_window_ms": 60000,
   "rate_limit_max": 120
@@ -467,7 +480,6 @@ Content-Type: application/json
 | Field | Type | Description |
 |-------|------|-------------|
 | `ok` | boolean | Always `true` if server is running |
-| `pid` | number | Process ID of the Node.js process |
 | `apiAuthFileInUse` | boolean | `true` if using API keys file, `false` if single key or no auth |
 | `rate_limit_window_ms` | number | Rate limit window in milliseconds |
 | `rate_limit_max` | number | Maximum requests per window |
@@ -482,7 +494,6 @@ Response:
 ```json
 {
   "ok": true,
-  "pid": 42,
   "apiAuthFileInUse": true,
   "rate_limit_window_ms": 60000,
   "rate_limit_max": 120

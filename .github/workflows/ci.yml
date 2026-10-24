@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Node 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -22,8 +22,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      # The tests deliberately stop at the browser boundary, so no Chromium
-      # download is needed here. Render behaviour is verified against the image.
+      # The unit tests stop at the browser boundary, so no Chromium download is
+      # needed here. The image job below renders for real.
       - name: Run tests
         run: npm test
 
@@ -31,3 +31,53 @@ jobs:
       # derived from it honest.
       - name: Check version consistency
         run: npm run version:check
+
+      # shellcheck ships on the ubuntu runner image.
+      - name: Lint shell scripts
+        run: shellcheck convert-cli.sh
+
+  # Builds the real image and renders a Thai document with it, so a broken
+  # Dockerfile, a Playwright/browser mismatch or a missing font fails the pull
+  # request instead of the release. Skipped on feature-branch pushes; the pull
+  # request covers them.
+  image:
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build image
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: .
+          load: true
+          tags: viewsarn:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start container
+        run: docker run -d --name viewsarn-smoke -p 3000:3000 -e API_KEY=ci-key viewsarn:ci
+
+      - name: Smoke render (Thai PDF and PNG, fonts)
+        run: node scripts/smoke.mjs http://127.0.0.1:3000 ci-key --container viewsarn-smoke
+
+      # The image holds only server.js and src/, so mount the tests read-only.
+      - name: Real-browser tests
+        run: >
+          docker run --rm --entrypoint node -e RUN_BROWSER_TESTS=1
+          -v "$PWD/test:/app/test:ro" viewsarn:ci --test "test/browser/*.test.js"
+
+      - name: Container logs
+        if: failure()
+        run: docker logs viewsarn-smoke

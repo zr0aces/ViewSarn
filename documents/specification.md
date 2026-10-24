@@ -33,8 +33,12 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-1.1** | `POST /convert` accepts a JSON body with a required `html` string and an optional `options` object, and returns a PDF by default or a PNG when `options.png` is true. |
 | ☑️ **R-1.2** | A missing or non-string `html` is rejected with `400` before any browser work begins. |
 | ☑️ **R-1.3** | Output streams back in the response body, with `Content-Type`, `Content-Length`, and a `Content-Disposition` filename. |
-| ☑️ **R-1.4** | With `save: true` the result is written under `OUTPUT_DIR` and the response is JSON metadata (`path`, `filename`, `size`, `scale`, `contentSize`, `paper`, `orientation`) instead of the file. |
-| ☑️ **R-1.5** | `outPath` is resolved **under** `OUTPUT_DIR`. Leading `../` segments are stripped so a caller cannot write outside it. |
+| ☑️ **R-1.4** | With `save: true` the result is written under `OUTPUT_DIR/<key label>/` and the response is JSON metadata (`path` relative to `OUTPUT_DIR`, `filename`, `size`, `scale`, `contentSize`, `paper`, `orientation`) instead of the file. |
+| ☑️ **R-1.5** | `outPath` is resolved **under** the caller's own directory `OUTPUT_DIR/<key label>/`. A path that escapes it, by `..` segments or by a symlink, is refused with `400`; a leading `/` is tolerated and means the same as none. Two keys saving the same `outPath` write different files. A repeated `filename` or `outPath` overwrites the caller's earlier file. With `OUTPUT_MAX_BYTES` above 0, a save that would push the caller's directory past it is refused with `507`. |
+| ☑️ **R-1.25** | `save` must be a boolean and `outPath` a non-empty string, `filename` must not contain quotes, control characters or more than 200 characters, `png` and `single` must be booleans, and a `margin` that leaves no printable area is refused, each with `400`. |
+| ☑️ **R-1.28** | Requests made by rendered HTML to loopback, private, link-local or carrier-grade-NAT addresses, or over a scheme other than `http`, `https`, `data`, `about` or `blob`, are aborted; hostnames are resolved and every address is checked; a lookup failure aborts the request instead of leaving it unanswered. `EGRESS_ALLOW` (hostnames, IPs, CIDRs) names destinations that stay reachable. |
+| ☑️ **R-1.27** | Every response is JSON with `error` and `request_id`, including an unknown route (`404`), an unsupported charset or `Content-Encoding` (`415`, with its own message), and an unexpected throw anywhere in the app (`500`, generic). |
+| ☑️ **R-1.26** | `Content-Disposition` carries an ASCII `filename` fallback and an RFC 5987 `filename*=UTF-8''` value, so non-Latin names work. The success log line and the `renders` counter are written after the response is sent. |
 | ☑️ **R-1.6** | Paper size comes from `format` (`A4`, `A5`, `LETTER`, `LEGAL`, case-insensitive). An unrecognised value falls back to A4 rather than erroring, and must not resolve to an inherited object property. |
 | ☑️ **R-1.7** | Margins accept `mm`, `cm`, and `in`. A bare number is read as mm. Other CSS units are not parsed. |
 | ☑️ **R-1.15** | Request bodies over `BODY_LIMIT` are rejected with `413` by the body parser, before the route runs. |
@@ -42,7 +46,11 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ✅ **R-1.17** | `options` is validated before rendering: `format`, `orientation`, `waitUntil`, `margin`, `dpi`, `scale`, and `filename` are rejected with `400` when malformed, rather than silently coerced. `filename` may not contain path separators. |
 | ☑️ **R-1.18** | Every request carries an `X-Request-Id` — the caller's if supplied, otherwise generated — echoed in the response header, included in the error body, and attached to that request's log lines. |
 | ☑️ **R-1.19** | A `500` body reports a generic message. Chromium and filesystem detail goes to the log under the request id, never to the caller. |
-| ☑️ **R-1.20** | A caller that disconnects while queued is dropped from the queue rather than rendered for, and no response is written to the closed socket. |
+| ☑️ **R-1.20** | A caller that disconnects while queued is dropped from the queue rather than rendered for, and no response is written to the closed socket. A caller that disconnects while its render is running has the render abandoned, its context closed, and its slot released. |
+| ☑️ **R-1.21** | A request that waits more than `RENDER_QUEUE_WAIT_MS` (default 30000) for a render slot is removed from the queue and answered `503`. |
+| ☑️ **R-1.22** | A render whose output would exceed `MAX_PNG_PIXELS` (default 25,000,000 device pixels; full-page PNGs count the whole document) or `MAX_PDF_PAGES` (default 200) is refused with `413` before the screenshot or PDF is produced. `dpi` is never lowered silently. |
+| ☑️ **R-1.23** | When `MAX_INFLIGHT_PER_KEY` is above 0, a caller with that many renders running or queued gets `429` with `Retry-After`. The default 0 means no cap. |
+| ☑️ **R-1.24** | A browser that disconnects is replaced on the next render, concurrent callers share one launch, and a failed launch answers `503`. Shutdown stops new launches. A hung `context.close()` is abandoned after 5 s so it cannot pin a slot. |
 
 ### Scaling
 
@@ -70,10 +78,11 @@ ViewSarn converts a caller-supplied HTML string into a PDF or PNG, rendering it 
 | ☑️ **R-2.1** | A key is accepted as `Authorization: Bearer <key>` or `X-API-Key: <key>`. (Tests cover the bearer form only.) |
 | ☑️ **R-2.2** | Key sources resolve in order: a non-empty `API_KEYS_FILE` wins over `API_KEY`. |
 | ✅ **R-2.7** | API keys are compared as fixed-length SHA-256 digests, never as raw strings — `===` on a secret leaks its prefix through response timing. |
+| ☑️ **R-2.9** | Wrong keys are counted per client IP against `AUTH_FAIL_MAX` per rate-limit window. Past the budget the response is `429` with `Retry-After` instead of `401`. A valid key must never be refused because of failed attempts from the same IP. |
 | ☑️ **R-2.8** | The keys file is loaded **synchronously** at startup. An async first load leaves a window where a configured keys file is not yet read, during which the service falls back to `API_KEY` or serves unauthenticated. |
-| ☑️ **R-2.3** | With **neither** configured, authentication is disabled and every request is served. The service must log a warning at startup saying so. This is a deliberate zero-config default, not a bug — see §6. |
+| ☑️ **R-2.3** | With **neither** configured, the service must refuse to start (exit 1, naming the keys path and saying so when that path is a directory) and, if the check is bypassed, must answer every request with 401. Running with no keys requires the explicit opt-out `AUTH_DISABLED=true`, which logs a warning at startup, ignores any presented key header, and rate-limits by client IP only. |
 | ☑️ **R-2.4** | The keys file is re-read every `API_KEYS_RELOAD_MS` so keys can be added or revoked without a restart. |
-| ☑️ **R-2.5** | A **transient** read failure of the keys file (for example `EACCES`) must leave the previously loaded keys in force. Only the file's absence clears them. Failing to read must never silently drop the service into unauthenticated mode. |
+| ☑️ **R-2.5** | A **transient** read failure of the keys file (for example `EACCES`) must leave the previously loaded keys in force. A missing or empty file keeps the previous keys for one reload and clears them on the second consecutive missing or empty read, so a half-written rotation is tolerated and emptying the file still revokes keys. Failing to read must never silently drop the service into unauthenticated mode. |
 | ☑️ **R-2.6** | Rejected requests get `401` with a `WWW-Authenticate` header and no detail about why the key failed. |
 
 ---
@@ -113,10 +122,10 @@ The service runs one Chromium instance; every in-flight render holds a page, and
 
 Stated plainly, because two defaults here are permissive on purpose and reviewers should not have to re-derive the reasoning.
 
-- **Auth is optional (R-2.3).** The service is designed to run on a private network or behind a gateway. Zero-config startup is a convenience for local use; the startup warning is what makes the state visible. Anything reachable from outside must set `API_KEY` or mount `API_KEYS_FILE`.
+- **Auth is on unless explicitly disabled (R-2.3).** The service is designed to run on a private network or behind a gateway, where `AUTH_DISABLED=true` is acceptable. Without a key source and without that opt-out it does not start. Anything reachable from outside must set `API_KEY` or mount `API_KEYS_FILE`.
 - **HTML is not sanitised (R-0.5).** Rendering caller-supplied HTML means running caller-supplied JavaScript in Chromium. Callers are trusted. Do not expose `/convert` directly to untrusted end users without a sanitising layer in front; per-request context isolation (R-4.1) limits cross-request leakage but is not a sandbox boundary.
-- **Key comparison is not constant-time.** Keys are compared with `===` and set membership, which is timing-variable. Acceptable for high-entropy keys on a private network; switch to `crypto.timingSafeEqual` if that assumption stops holding.
-- **`/health` is unauthenticated (R-5.1)** and exposes `pid` and the rate-limit configuration. Treat that as public information, or block the path at the proxy.
+- **Key comparison is constant-time (R-2.7).** Keys are compared as fixed-length SHA-256 digests (set membership for the keys file, `crypto.timingSafeEqual` for `API_KEY`), so response timing does not reveal a key's prefix.
+- **`/health` is unauthenticated (R-5.1)** and exposes the rate-limit configuration. Treat that as public information, or block the path at the proxy.
 
 ---
 
@@ -124,9 +133,9 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 
 | | Requirement |
 |---|---|
-| ☑️ **R-5.1** | `GET /health` returns `200` with `ok`, `pid`, `apiAuthFileInUse`, and the rate-limit configuration. It skips **authentication** — container healthchecks and load balancer probes cannot present a key. |
+| ☑️ **R-5.1** | `GET /health` returns `200` when the browser is connected and `503` when it is not (body: `ok`, `browser`), plus `apiAuthFileInUse`, and the rate-limit configuration. It skips **authentication** — container healthchecks and load balancer probes cannot present a key. |
 | ☑️ **R-5.2** | `/health` is **not** exempt from rate limiting; it must not be pollable for free. |
-| ☑️ **R-5.7** | `/metrics` exposes Prometheus counters when `METRICS_ENABLED=true`, off by default. Like `/health` it skips authentication but stays rate limited. |
+| ☑️ **R-5.7** | `/metrics` exposes Prometheus counters when `METRICS_ENABLED=true`, off by default. It requires a key whenever authentication is configured, and is open only when the service runs with `AUTH_DISABLED=true`. It is rate limited either way. |
 | ☑️ **R-5.8** | CORS headers are sent only for origins listed in `CORS_ORIGINS`, which is empty by default — correct for a server-to-server service. A preflight from an unlisted origin is refused with `403`. |
 | ☑️ **R-5.3** | Logs go to stdout as one JSON object per line when `NODE_ENV=production`. Human-readable formatting is a development-only concern and must not cost anything in production. |
 | ☑️ **R-5.4** | `503` and `504` are load signals, logged at `warn`; only genuine faults log at `error`. |
@@ -141,8 +150,8 @@ Stated plainly, because two defaults here are permissive on purpose and reviewer
 |---|---|---|
 | `200` | Converted, or saved | R-1.1, R-1.4 |
 | `400` | `html` missing or not a string | R-1.2 |
-| `400` | Malformed JSON body — **HTML response** | R-1.16 |
-| `413` | Body exceeded `BODY_LIMIT` — **HTML response** | R-1.15, R-1.16 |
+| `400` | Malformed JSON body — JSON | R-1.16 |
+| `413` | Body exceeded `BODY_LIMIT` — JSON | R-1.15, R-1.16 |
 | `401` | Key missing or wrong, where auth is configured | R-2.6 |
 | `429` | Rate limit exceeded | R-3.2 |
 | `500` | Render failed | — |
@@ -161,6 +170,16 @@ Requirements added or changed after the initial specification, with the reason. 
 | R-4.3 | Added | `page.evaluate` has no timeout of its own. Combined with the new concurrency cap, one wedged page could pin a slot permanently and enough of them could stall the service — the cap turned a per-request hang into a global one, so the deadline had to come with it. |
 | R-3.5 | Added | Counters were never reclaimed, growing one entry per distinct IP forever. The first fix swept on every insert, which is O(n) per request under a spray; sweeping is now amortised to once per window. |
 | R-3.4 | Added | `RATE_LIMIT_MAX=0` silently became the default of 120, because config treated 0 as "unset" and the first-insert path never checked the count. |
+| R-2.3 | Changed | Auth failed open: a missing keys file, a keys path that Docker created as a directory, or an empty file all left the service unauthenticated with only a log warning (audit 2026-10-24, F-04). Open mode now needs `AUTH_DISABLED=true`. |
+| R-2.9 | Added | A request with a wrong key is counted per client IP (`AUTH_FAIL_MAX`, default 30 per window); past the budget the answer is 429 instead of 401. A valid key is never throttled by failed attempts, because behind a proxy without `TRUST_PROXY` all clients share one IP. |
+| R-5.1 | Changed | `/health` no longer returns `pid`, and returns `503` when the browser is disconnected so the orchestrator restarts the container (audit F-02). |
+| R-1.28 | Added | Caller HTML could fetch cloud metadata and internal services and render the response into the output (audit F-05). Verified in the image: a page fetching a local server produced 0 hits with the filter and 2 with the destination allowed. |
+| R-1.27 | Added | An unknown route returned an HTML 404 and every body-parser error was labelled "Malformed JSON body" (audit F-14). |
+| R-1.4, R-1.5, R-1.25, R-1.26 | Changed | `save` let every key overwrite any file, accepted traversal by silent rewrite, returned the absolute server path and 500ed on a non-string `outPath`; a Thai `filename` 500ed after a full render (audit F-08, F-10, F-12). |
+| R-1.22 | Measured | In the image, peak container memory was 243 MB at 3M device pixels, 432 MB at 15M, 1005 MB at 39M and 1854 MB at 78M (about 22 bytes per pixel over a 142 MB idle browser), so the default is 25M, which keeps two concurrent renders inside the 2 GB compose limit. |
+| R-1.20 to R-1.24 | Added | A dead Chromium was never replaced and `/health` stayed green; output size was unbounded; one key could hold every slot; queued requests waited with no bound (audit F-02, F-03, F-07, F-13). |
+| R-5.7 | Changed | `/metrics` requires a key when auth is configured. |
+| R-2.5 | Changed | The first empty or missing read keeps the previous keys; a second consecutive one clears them, so revoking the last key works. |
 | R-2.5 | Added | Any read error on the keys file cleared every key, which could drop a running service into unauthenticated mode on a transient `EACCES`. |
 | R-5.1, R-5.2 | Added | `/health` sat behind the global auth middleware, so every container healthcheck and Kubernetes probe failed once a key was configured. Exempting it from auth alone — not from rate limiting — fixes the probes without opening free polling. |
 | R-1.10 | Added | A refactor made `scale: null` clamp to 0.1, which would have shrunk every render that did not pass an explicit scale. |

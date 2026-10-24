@@ -45,3 +45,6 @@ list.csv
 .vite
 vite.config.ts.timestamp*
 tsconfig.tsbuildinfo
+
+# Local tool settings backups
+.claude/*.bak*

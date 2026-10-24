@@ -14,7 +14,8 @@
     "test:watch": "node --test --watch test/*.test.js",
     "release": "node scripts/release.js",
     "version:sync": "node scripts/sync-version.js",
-    "version:check": "node scripts/sync-version.js --check"
+    "version:check": "node scripts/sync-version.js --check",
+    "test:browser": "RUN_BROWSER_TESTS=1 node --test test/browser/*.test.js"
   },
   "dependencies": {
     "express": "^5.2.1",

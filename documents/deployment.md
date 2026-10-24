@@ -181,7 +181,7 @@ services:
     shm_size: "2gb"
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -377,7 +377,7 @@ fi
         "sharedMemorySize": 1024
       },
       "healthCheck": {
-        "command": ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"],
+        "command": ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""],
         "interval": 30,
         "timeout": 5,
         "retries": 3,
@@ -817,6 +817,8 @@ Counters are per process and reset on restart, so aggregate across replicas rath
 | `viewsarn_render_rejected_total` | counter | `503`s — the queue is full; raise capacity or shed earlier |
 | `viewsarn_render_timeouts_total` | counter | `504`s — renders hitting `RENDER_TIMEOUT_MS` |
 | `viewsarn_rate_limited_total` | counter | `429`s |
+| `viewsarn_render_oversize_total` | counter | `413`s — output over `MAX_PNG_PIXELS` or `MAX_PDF_PAGES` |
+| `viewsarn_per_key_limited_total` | counter | `429`s from `MAX_INFLIGHT_PER_KEY` |
 | `viewsarn_unauthorized_total` | counter | `401`s — misconfigured clients, or probing |
 | `viewsarn_renders_active` | gauge | Slots in use; sustained at `RENDER_CONCURRENCY` means saturated |
 | `viewsarn_renders_queued` | gauge | Backlog depth; approaching `RENDER_QUEUE_MAX` precedes `503`s |
@@ -835,6 +837,19 @@ const redis = new Redis(process.env.REDIS_URL);
 ```
 
 ---
+
+### Rendered HTML is an SSRF vector
+
+`html` is rendered by a real browser inside your network, so a page can request any address the container can reach: cloud metadata (`169.254.169.254`), sidecars, other internal services, and the container's own loopback. ViewSarn blocks these at the application layer:
+
+- Every request a page makes is checked. Loopback, private (RFC 1918), link-local, carrier-grade NAT and the IPv6 equivalents are refused, as is any scheme other than `http`, `https`, `data`, `about` and `blob` (so `file:` is out). Redirects are checked at each hop. A DNS failure is a refusal.
+- `EGRESS_ALLOW` opens named destinations: a comma-separated list of hostnames, IP addresses and CIDRs, for example `EGRESS_ALLOW=assets.internal.example,10.20.0.0/16`. A CIDR applies to the addresses a hostname resolves to.
+
+This filter is a second layer, not the boundary. The hostname is resolved once by ViewSarn and again by Chromium, so a DNS server that changes its answer between the two (rebinding) can slip past it, and WebSocket traffic is not intercepted. The boundary is a network rule: deny the metadata address and private ranges for this container, for example an egress-restricted Docker network or a Kubernetes `NetworkPolicy`.
+
+Chromium runs with `--no-sandbox`. Its own sandbox does not start under Docker's default seccomp profile, and the two ways to get it (`--cap-add SYS_ADMIN`, or `seccomp=unconfined`) loosen the container more than they protect it. The compose file therefore drops all capabilities, sets `no-new-privileges`, and mounts the root filesystem read-only with a `/tmp` tmpfs; the Thai PDF, PNG and `save` paths were checked against those settings.
+
+A healthcheck that reports unhealthy (`/health` returns 503 once Chromium has disconnected) does not by itself restart a plain Docker or Compose container. Use an orchestrator that acts on it (Kubernetes liveness probe) or an autoheal sidecar.
 
 ## Troubleshooting
 
@@ -906,6 +921,10 @@ docker compose up --scale viewsarn=3
 healthcheck:
   test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 ```
+
+Create `apikeys.txt` before the first `docker compose up`: if the file is missing, Docker makes a directory at that path and the service exits at startup with a message saying so. Set `AUTH_DISABLED=true` only for a deployment that must run with no keys.
+
+Queued requests also expire: after `RENDER_QUEUE_WAIT_MS` (default 30000) a waiting request gets `503`. `MAX_INFLIGHT_PER_KEY` (default 0, off) caps the renders one key may have running or queued; set it on shared deployments. `MAX_PNG_PIXELS` (25,000,000) and `MAX_PDF_PAGES` (200) refuse oversize output with `413`. Measured in the image: a full-page PNG costs about 22 bytes per device pixel over a ~150 MB idle browser (243 MB at 3M pixels, 1005 MB at 39M), so keep `RENDER_CONCURRENCY` x `MAX_PNG_PIXELS` x 22 bytes plus 150 MB under the container limit. The page ceiling is not measured. `/health` returns `503` when Chromium has disconnected, so the container healthcheck restarts it; `AUTH_FAIL_MAX` (default 30) and `SHUTDOWN_TIMEOUT_MS` (default 10000) round out the new settings.
 
 `/health` itself needs no API key — it is exempt from the auth middleware — so Kubernetes `httpGet` probes and load balancer checks work unmodified.
 
