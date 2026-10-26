@@ -69,7 +69,7 @@ curl http://localhost:3000/health
 
 ## Pre-built Docker Images
 
-ViewSarn provides automated Docker image builds through GitHub Actions. Every time a release or version tag is created, a new Docker image is automatically built and published to GitHub Container Registry (GHCR).
+ViewSarn provides automated Docker image builds through GitHub Actions. Every time a version tag matching `v*` is pushed, a new Docker image is automatically built and published to GitHub Container Registry (GHCR). Publishing a GitHub release for that tag does not trigger another build.
 
 ### Using Pre-built Images
 
@@ -126,9 +126,7 @@ The following tags are automatically generated:
 
 ### Automated Build Process
 
-The Docker images are built automatically via GitHub Actions when:
-- A new release is published on GitHub
-- A new tag matching `v*` pattern is pushed (e.g., `v2026.10.3`)
+The Docker images are built automatically via GitHub Actions when a new tag matching the `v*` pattern is pushed (e.g., `v2026.10.3`).
 
 The workflow:
 1. Checks out the repository code

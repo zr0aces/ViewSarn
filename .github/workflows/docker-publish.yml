@@ -1,8 +1,7 @@
 name: Docker Build and Publish
 
 on:
-  release:
-    types: [published]
+  # A release commonly follows a tag push; only the tag publishes the image.
   push:
     tags:
       - 'v*'

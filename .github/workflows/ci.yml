@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # PRs cover feature branches; pushing the same commit must not run CI twice.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
 
 jobs:
@@ -38,8 +39,7 @@ jobs:
 
   # Builds the real image and renders a Thai document with it, so a broken
   # Dockerfile, a Playwright/browser mismatch or a missing font fails the pull
-  # request instead of the release. Skipped on feature-branch pushes; the pull
-  # request covers them.
+  # request instead of the release. Runs on both pull requests and main pushes.
   image:
     needs: test
     if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
