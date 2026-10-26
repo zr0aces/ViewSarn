@@ -64,7 +64,8 @@ RUN if [ -f package-lock.json ]; then \
 # chromium-headless-shell is what chromium.launch({headless:true}) actually runs;
 # it is a few hundred MB smaller than the full headed Chromium build.
 RUN npx playwright install chromium-headless-shell --with-deps \
-    && rm -rf /var/lib/apt/lists/* /root/.npm
+    && rm -rf /var/lib/apt/lists/* /root/.npm \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 # 7. Copy App Code
 COPY --chown=www-data:www-data server.js /app/server.js
